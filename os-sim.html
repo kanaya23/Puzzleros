@@ -397,7 +397,7 @@
             }
             if (VirtualKernel.powerState === "EPILOGUE") {
                 const dir = VirtualKernel.currentDirectory.replace('/home/jew', '~');
-                return `[user@debian ${dir}]$ `;
+                return `[jew@arch-jew ${dir}]$ `;
             }
             return "C:\>";
         };
@@ -1335,7 +1335,7 @@
                     + "    sudo apt install " + pick + "\n\n"
                     + "Once installed, run 'secret-app' to receive your prize."
             };
-            print(""); print("--- Booting into Debian environment ---");
+            print(""); print("--- Loading next stage ---");
             print(""); printInstruction();
             saveState();
         };
