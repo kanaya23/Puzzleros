@@ -189,7 +189,8 @@
             mathAnswer: 4,
             bootFlags: {
                 grubInstalled: false,
-                grubConfigured: false
+                grubConfigured: false,
+                coreSyncDone: false
             }
         };
 
@@ -314,6 +315,34 @@
                 node = node.children[p];
             }
             return node;
+        };
+
+        const ensureParent = (path) => {
+            const resolved = resolvePath(path);
+            const parts = resolved.split("/").filter(p => p);
+            const name = parts.pop();
+            let node = VirtualKernel.fileSystem["/"];
+            for (const p of parts) {
+                if (!node.children) node.children = {};
+                if (!node.children[p]) return null;
+                node = node.children[p];
+            }
+            return { parent: node, name };
+        };
+
+        const mkdirNode = (path) => {
+            const r = ensureParent(path);
+            if (!r) { print("mkdir: cannot create directory '" + path + "': No such file or directory"); return false; }
+            if (r.parent.children[r.name]) { print("mkdir: cannot create directory '" + path + "': File exists"); return false; }
+            r.parent.children[r.name] = { type: "d", children: {} };
+            return true;
+        };
+
+        const touchNode = (path) => {
+            const r = ensureParent(path);
+            if (!r) { print("touch: cannot touch '" + path + "': No such file or directory"); return false; }
+            if (!r.parent.children[r.name]) r.parent.children[r.name] = { type: "f", content: "" };
+            return true;
         };
 
         const getPrompt = () => {
@@ -1021,38 +1050,33 @@
             }
         };
 
-        const handlePacman = (cmd) => {
-            if (cmd === "4") {
-                print(":: Synchronizing package databases...");
-                print(" core is up to date");
-                print(" extra is up to date");
-                print(" core-sync-repo        1024.0 B   100K/s 00:00 [#################] 100%");
-                print("resolving dependencies...");
-                print("looking for conflicting packages...");
-                print("");
-                print("Packages (1) core-sync-1.0.0-1");
-                print("");
-                print("Total Installed Size:  1.2 MiB");
-                print("");
-                print(":: Proceed with installation? [Y/n] y");
-                print("(1/1) Checking keys in keyring                 [#################] 100%");
-                print("(1/1) Checking integrity                       [#################] 100%");
-                print("(1/1) Loading package files                    [#################] 100%");
-                print("(1/1) Installing core-sync                     [#################] 100%");
-                print(":: Running post-transaction hooks...");
-                print("[+] Re-establishing secure handshake link...");
-                print("[+] Boot complete. System integrity restored.");
-                
-                setTimeout(() => {
-                    print("Redirecting to secure endpoint...");
-                    print("SIMULATION COMPLETE. SYSTEM SECURE.");
-                    document.getElementById('input-line').style.display = 'none';
-                    clearSave();
-                }, 1500);
-            } else {
-                print("Sorry, try again.");
-                print("[sudo] password for jew: ");
-            }
+        const handleCoreSync = () => {
+            print(":: Synchronizing package databases...");
+            print(" core is up to date");
+            print(" extra is up to date");
+            print(" core-sync-repo        1024.0 B   100K/s 00:00 [#################] 100%");
+            print("resolving dependencies...");
+            print("looking for conflicting packages...");
+            print("");
+            print("Packages (1) core-sync-1.0.0-1");
+            print("");
+            print("Total Installed Size:  1.2 MiB");
+            print("");
+            print(":: Proceed with installation? [Y/n] y");
+            print("(1/1) Checking keys in keyring                 [#################] 100%");
+            print("(1/1) Checking integrity                       [#################] 100%");
+            print("(1/1) Loading package files                    [#################] 100%");
+            print("(1/1) Installing core-sync                     [#################] 100%");
+            print(":: Running post-transaction hooks...");
+            print("[+] Re-establishing secure handshake link...");
+            print("[+] Boot complete. System integrity restored.");
+            
+            setTimeout(() => {
+                print("Redirecting to secure endpoint...");
+                print("SIMULATION COMPLETE. SYSTEM SECURE.");
+                document.getElementById('input-line').style.display = 'none';
+                clearSave();
+            }, 1500);
         };
 
         const handleRm = async (args) => {
@@ -1096,7 +1120,7 @@
                     mounts: { "/mnt": null, "/mnt/boot": null },
                     env: { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "en_US.UTF-8", SHELL: "/bin/bash" },
                     mathSeries: [],
-                    bootFlags: { grubInstalled: false, grubConfigured: false }
+                    bootFlags: { grubInstalled: false, grubConfigured: false, coreSyncDone: false }
                 });
                 initFS();
                 startStage1();
@@ -1106,6 +1130,727 @@
                 print(`rm: cannot remove '${args[args.length-1]}': No such file or diwectowy. Uwu`);
             }
         };
+
+        // --- File operations ---
+        const handleMkdir = (args) => {
+            const hasP = args.includes("-p");
+            const paths = args.filter(a => a !== "-p");
+            if (paths.length === 0) { print("mkdir: missing operand"); return; }
+            paths.forEach(p => {
+                if (hasP && ensureParent(p)) { mkdirNode(p); return; }
+                mkdirNode(p);
+            });
+        };
+        const handleTouch = (args) => {
+            if (args.length === 0) { print("touch: missing file operand"); return; }
+            args.forEach(a => touchNode(a));
+        };
+        const cpNode = (src, dst, rec) => {
+            const sn = getNode(src);
+            if (!sn) { print("cp: cannot stat '" + src + "': No such file or directory"); return; }
+            if (sn.type === "d" && !rec) { print("cp: omitting directory '" + src + "'"); return; }
+            const dr = ensureParent(dst);
+            if (!dr) { print("cp: cannot create '" + dst + "': No such file or directory"); return; }
+            dr.parent.children[dr.name] = JSON.parse(JSON.stringify(sn));
+        };
+        const handleCp = (args) => {
+            const rec = args.includes("-r") || args.includes("-R") || args.includes("-a");
+            const paths = args.filter(a => a !== "-r" && a !== "-R" && a !== "-a");
+            if (paths.length < 2) { print("cp: missing file operand"); return; }
+            const dst = paths.pop();
+            paths.forEach(s => {
+                const base = s.split("/").filter(p => p).pop() || s;
+                cpNode(s, dst.endsWith("/") ? dst + base : dst, rec);
+            });
+        };
+        const handleMv = (args) => {
+            const paths = args.filter(a => !a.startsWith("-"));
+            if (paths.length < 2) { print("mv: missing file operand"); return; }
+            const dst = paths.pop();
+            paths.forEach(s => {
+                const sn = getNode(s);
+                if (!sn) { print("mv: cannot stat '" + s + "': No such file or directory"); return; }
+                const sr = ensureParent(s);
+                const dr = ensureParent(dst.endsWith("/") ? dst + s.split("/").filter(p => p).pop() : dst);
+                if (!dr) { print("mv: cannot move to '" + dst + "'"); return; }
+                dr.parent.children[dr.name] = JSON.parse(JSON.stringify(sn));
+                if (sr) delete sr.parent.children[sr.name];
+            });
+        };
+        const handleChmod = (args) => {
+            const path = args[args.length - 1];
+            const mode = args[0];
+            const node = getNode(path);
+            if (!node) { print("chmod: cannot access '" + path + "': No such file or directory"); return; }
+            const permMap = { "755": "rwxr-xr-x", "644": "rw-r--r--", "777": "rwxrwxrwx", "700": "rwx------", "600": "rw-------", "+x": null };
+            if (mode === "+x") {
+                if (node.permissions) node.permissions = node.permissions.slice(0, 1) + "x" + node.permissions.slice(2);
+                else node.permissions = "rwxr-xr-x";
+            } else if (permMap[mode] !== undefined) {
+                node.permissions = permMap[mode];
+            } else {
+                print("chmod: invalid mode: '" + mode + "'");
+            }
+        };
+        const handleChown = (args) => {
+            const path = args[args.length - 1];
+            const spec = args[0];
+            const node = getNode(path);
+            if (!node) { print("chown: cannot access '" + path + "': No such file or directory"); return; }
+            const parts = spec.split(":");
+            if (parts[0]) node.owner = parts[0];
+            if (parts[1]) node.group = parts[1];
+        };
+
+        // --- Text processing ---
+        const handleGrep = (args) => {
+            const opts = args.filter(a => a.startsWith("-"));
+            const rest = args.filter(a => !a.startsWith("-"));
+            const ignore = opts.some(o => o.includes("i"));
+            const regex = opts.some(o => o.includes("E") || o.includes("P"));
+            if (rest.length < 2) { print("grep: usage error"); return; }
+            const pattern = rest[0];
+            const file = rest[1];
+            const node = getNode(file);
+            if (!node || node.type === "d") { print("grep: " + file + ": No such file or directory"); return; }
+            const content = node.content || "";
+            const lines = content.split("\n");
+            const re = new RegExp(pattern, ignore ? "i" : "");
+            lines.forEach((l, i) => { if (l.match(re)) print(file + ":" + (i + 1) + ":" + l); });
+        };
+        const handleHead = (args) => {
+            const nIdx = args.indexOf("-n");
+            let n = 10;
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (nIdx !== -1) { n = parseInt(args[nIdx + 1]) || 10; }
+            if (!rest[0]) { print("head: missing file operand"); return; }
+            const node = getNode(rest[0]);
+            if (!node) { print("head: " + rest[0] + ": No such file or directory"); return; }
+            (node.content || "").split("\n").slice(0, n).forEach(l => print(l));
+        };
+        const handleTail = (args) => {
+            const nIdx = args.indexOf("-n");
+            let n = 10;
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (nIdx !== -1) { n = parseInt(args[nIdx + 1]) || 10; }
+            if (!rest[0]) { print("tail: missing file operand"); return; }
+            const node = getNode(rest[0]);
+            if (!node) { print("tail: " + rest[0] + ": No such file or directory"); return; }
+            const lines = (node.content || "").split("\n");
+            lines.slice(Math.max(0, lines.length - n)).forEach(l => print(l));
+        };
+        const handleWc = (args) => {
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (!rest[0]) { print("wc: missing file operand"); return; }
+            const node = getNode(rest[0]);
+            if (!node) { print("wc: " + rest[0] + ": No such file or directory"); return; }
+            const content = node.content || "";
+            const lines = content.split("\n").length - (content.endsWith("\n") ? 0 : content === "" ? 0 : 1);
+            const words = content.split(/\s+/).filter(w => w).length;
+            const chars = content.length;
+            print(lines + " " + words + " " + chars + " " + rest[0]);
+        };
+        const handleSort = (args) => {
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (!rest[0]) { print("sort: missing file operand"); return; }
+            const node = getNode(rest[0]);
+            if (!node) { print("sort: " + rest[0] + ": No such file or directory"); return; }
+            (node.content || "").split("\n").filter(l => l).sort().forEach(l => print(l));
+        };
+        const handleUniq = (args) => {
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (!rest[0]) { print("uniq: missing file operand"); return; }
+            const node = getNode(rest[0]);
+            if (!node) { print("uniq: " + rest[0] + ": No such file or directory"); return; }
+            let prev = null;
+            (node.content || "").split("\n").forEach(l => { if (l !== prev) { print(l); prev = l; } });
+        };
+        const handleLess = (args) => {
+            if (!args[0]) { print("less: missing file operand"); return; }
+            const node = getNode(args[0]);
+            if (!node) { print("less: " + args[0] + ": No such file or directory"); return; }
+            print("(simulated pager — showing full content)");
+            (node.content || "").split("\n").forEach(l => print(l));
+        };
+        const handleMore = (args) => {
+            if (!args[0]) { print("more: missing file operand"); return; }
+            handleLess(args);
+        };
+        const handleSed = (args, rawCmd) => {
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (rest.length < 2) { print("sed: usage error"); return; }
+            const expr = rest[0];
+            const file = rest[1];
+            const node = getNode(file);
+            if (!node) { print("sed: " + file + ": No such file or directory"); return; }
+            const m = expr.match(/^s[\/,](.+?)[\/,](.*?)[\/,](g?)$/);
+            if (!m) { print("sed: invalid expression"); return; }
+            const re = new RegExp(m[1], m[3] ? "g" : "");
+            node.content = (node.content || "").replace(re, m[2]);
+            if (args.includes("-i")) return;
+            print(node.content);
+        };
+        const handleCut = (args) => {
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (!rest[0]) { print("cut: missing file operand"); return; }
+            const node = getNode(rest[0]);
+            if (!node) { print("cut: " + rest[0] + ": No such file or directory"); return; }
+            (node.content || "").split("\n").forEach(l => print(l));
+        };
+        const handleTr = (args) => { print("tr: simulated — no changes made"); };
+        const handleDiff = (args) => {
+            const files = args.filter(a => !a.startsWith("-"));
+            if (files.length < 2) { print("diff: missing operand"); return; }
+            const n1 = getNode(files[0]); const n2 = getNode(files[1]);
+            if (!n1 || !n2) { print("diff: file not found"); return; }
+            const l1 = (n1.content || "").split("\n");
+            const l2 = (n2.content || "").split("\n");
+            print("--- " + files[0]); print("+++ " + files[1]);
+            let i = 0;
+            while (i < Math.max(l1.length, l2.length)) {
+                if (l1[i] !== l2[i]) {
+                    print("-" + (l1[i] || ""));
+                    print("+" + (l2[i] || ""));
+                }
+                i++;
+            }
+        };
+
+        // --- System info ---
+        const handleUname = (args) => {
+            const all = args.includes("-a");
+            const s = args.includes("-s") || all || args.length === 0;
+            const n = args.includes("-n") || all;
+            const r = args.includes("-r") || all;
+            const m = args.includes("-m") || all;
+            let out = "";
+            if (s) out += "Linux ";
+            if (n) out += "archiso ";
+            if (r) out += "6.7.0-arch1-1 ";
+            if (m) out += "x86_64";
+            if (!out) out = "Linux";
+            print(out.trim());
+        };
+        const handleArch = () => { print("x86_64"); };
+        const handleUptime = () => { print("16:30:11 up 42 min, 1 user, load average: 0.08, 0.03, 0.01"); };
+        const handleW = () => {
+            print("16:30:11 up 42 min, 1 user, load average: 0.08, 0.03, 0.01");
+            print("USER   TTY   FROM        LOGIN@   IDLE   JCPU   PCPU  WHAT");
+            print("jew    tty1  -          15:48    42m    0.27s  0.01s bash");
+        };
+        const handleWho = () => { print("jew     tty1         2026-06-09 15:48"); };
+        const handleId = (args) => {
+            const user = args[0] || "jew";
+            if (user === "jew") print("uid=1000(jew) gid=1000(jew) groups=1000(jew),998(wheel)");
+            else print("id: '" + user + "': no such user");
+        };
+        const handleWhoami = () => { print("jew"); };
+        const handleGroups = () => { print("jew wheel"); };
+        const handleLogname = () => { print("jew"); };
+        const handleDate = (args) => {
+            if (args.includes("-s") || args.includes("--set")) { print("date: cannot set date: Operation not permitted"); return; }
+            print("Tue Jun  9 16:30:11 WIB 2026");
+        };
+        const handleCal = () => {
+            print("      June 2026");
+            print("Mo Tu We Th Fr Sa Su");
+            print(" 1  2  3  4  5  6  7");
+            print(" 8  9 10 11 12 13 14");
+            print("15 16 17 18 19 20 21");
+            print("22 23 24 25 26 27 28");
+            print("29 30");
+        };
+        const handleHostnamectl = (args) => {
+            if (args.includes("set-hostname")) {
+                const name = args[args.indexOf("set-hostname") + 1];
+                if (name) {
+                    if (VirtualKernel.isChrooted) {
+                        const node = getNode("/etc/hostname");
+                        if (node) { node.content = name; print("hostname set to " + name); }
+                    } else { print("hostnamectl: Operation not permitted"); }
+                    return;
+                }
+            }
+            print("   Static hostname: " + (getNode("/etc/hostname")?.content || "n/a"));
+            print("   Operating System: Arch Linux");
+            print("       Kernel: Linux 6.7.0-arch1-1");
+            print("   Architecture: x86-64");
+        };
+
+        // --- Process ---
+        const handlePs = (args) => {
+            const wide = args.includes("aux") || args.includes("ef") || args.includes("-ef");
+            if (wide) {
+                print("USER   PID  CPU  MEM  VSZ    RSS   TTY   STAT START   TIME  COMMAND");
+                print("root     1  0.0  0.0  9876  2340  ?     Ss   15:48  0:00  init");
+                print("root   201  0.0  0.0 12345  3456  tty1  Ss   15:48  0:00  /usr/bin/login -- root");
+                print("jew    445  0.0  0.0 23456  5678  tty1  S     15:48  0:00  bash");
+                print("jew    789  0.0  0.0 34567  4567  tty1  R+   16:30  0:00  ps aux");
+            } else {
+                print("  PID TTY          TIME CMD");
+                print("  445 tty1      00:00:00 bash");
+                print("  789 tty1      00:00:00 ps");
+            }
+        };
+        const handleTop = () => {
+            print("top - 16:30:11 up 42 min, 1 user, load average: 0.08, 0.03, 0.01");
+            print("Tasks:  87 total,   1 running,  86 sleeping,   0 stopped,   0 zombie");
+            print("%Cpu(s):  2.3 us,  1.1 sy,  0.0 ni, 96.3 id,  0.3 wa,  0.0 hi,  0.0 si,  0.0 st");
+            print("MiB Mem :   1984.3 total,   1042.0 free,    312.4 used,    629.9 buff/cache");
+            print("MiB Swap:   1024.0 total,   1024.0 free,      0.0 used.   1502.1 avail Mem");
+            print("");
+            print("  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND");
+            print("  445 jew       20   0   23456   5678   3456 S   0.3   0.3   0:00.01 bash");
+            print("  789 jew       20   0   34567   4567   3456 R   0.0   0.2   0:00.00 top");
+        };
+        const handleKill = (args) => {
+            if (args.length === 0) { print("kill: usage: kill [-s sigspec | -n signum | -sigspec] pid"); return; }
+            const pid = parseInt(args[args.length - 1]);
+            if (isNaN(pid)) { print("kill: " + args[args.length - 1] + ": arguments must be process or job IDs"); return; }
+            print("bash: kill: (" + pid + ") - No such process");
+        };
+        const handleKillall = (args) => {
+            if (!args[0]) { print("killall: missing operand"); return; }
+            print(args[0] + ": no process found");
+        };
+
+        // --- Network ---
+        const handleIp = (args) => {
+            if (args.includes("addr") || args.includes("a")) {
+                print("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noop state UP");
+                print("    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00");
+                print("    inet 127.0.0.1/8 scope host lo");
+                print("2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP");
+                print("    link/ether 08:00:27:ab:cd:ef brd ff:ff:ff:ff:ff:ff");
+                print("    inet 10.0.2.15/24 brd 10.0.2.255 scope global enp0s3");
+            } else if (args.includes("link")) {
+                print("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noop state UP");
+                print("    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00");
+                print("2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP");
+                print("    link/ether 08:00:27:ab:cd:ef brd ff:ff:ff:ff:ff:ff");
+            } else if (args.includes("route")) {
+                print("default via 10.0.2.1 dev enp0s3");
+                print("10.0.2.0/24 dev enp0s3 proto kernel scope link src 10.0.2.15");
+            } else { print("ip: unknown option"); }
+        };
+        const handleIwctl = (args) => {
+            if (args.includes("station") && (args.includes("scan") || args.includes("connect"))) {
+                print("iwctl: simulated WiFi management");
+                print("Available networks:");
+                print("  SSID                              SECURITY  BARS  SPEED");
+                print("  \"Secure Network\"                  WPA2      ▂▄▆█  866.7 Mbps");
+            } else { print("iwctl: unknown command"); }
+        };
+        const handleDhcpcd = (args) => {
+            const iface = args[0] || "enp0s3";
+            print("dhcpcd: version 9.4.1 starting");
+            print("dhcpcd: " + iface + ": soliciting a DHCP lease");
+            print("dhcpcd: " + iface + ": offered 10.0.2.15 from 10.0.2.1");
+            print("dhcpcd: " + iface + ": acknowledged 10.0.2.15 from 10.0.2.1");
+            print("dhcpcd: " + iface + ": lease time 86400");
+            print("dhcpcd: forked to background, pid 1234");
+        };
+        const handleCurl = (args) => {
+            const urls = args.filter(a => !a.startsWith("-"));
+            if (!urls[0]) { print("curl: try 'curl --help' or 'curl --manual' for more information"); return; }
+            print("curl: connected to " + urls[0] + " (95.217.163.246)");
+            print("<html><body><h1>It works!</h1></body></html>");
+        };
+        const handleWget = (args) => {
+            const urls = args.filter(a => !a.startsWith("-"));
+            if (!urls[0]) { print("wget: missing URL"); return; }
+            print("--2026-06-09 16:30:11--  " + urls[0]);
+            print("Connecting to " + urls[0] + " (95.217.163.246)... connected.");
+            print("HTTP request sent, awaiting response... 200 OK");
+            print("Length: 1234 [text/html]");
+            print("Saving to: 'index.html'");
+            print("index.html         100%[===================>]   1.23K  --.-KB/s    in 0s");
+        };
+        const handleNmcli = (args) => {
+            if (args.includes("dev") && args.includes("wifi")) {
+                print("IN-USE  SSID                         MODE   CHAN  RATE      SIGNAL  SECURITY");
+                print("        Secure Network                Infra  6     866.7 Mbit/s  75      WPA2");
+            } else { print("nmcli: unknown command"); }
+        };
+
+        // --- Disk ---
+        const handleBlkid = (args) => {
+            const dev = args[0];
+            if (!dev || dev === "/dev/sda1") print("/dev/sda1: UUID=\"0987-6543\" BLOCK_SIZE=\"512\" TYPE=\"vfat\" PARTLABEL=\"EFI System\"");
+            if (!dev || dev === "/dev/sda2") print("/dev/sda2: UUID=\"12345678-1234-1234-1234-1234567890ab\" BLOCK_SIZE=\"4096\" TYPE=\"ext4\"");
+        };
+        const handleFindmnt = () => {
+            print("TARGET   SOURCE     FSTYPE OPTIONS");
+            print("/        /dev/sda2  ext4   rw,relatime");
+            print("├─/boot  /dev/sda1  vfat   rw,relatime,fmask=0022,dmask=0022");
+            print("└─/mnt   /dev/sda2  ext4   rw,relatime");
+        };
+        const handleDf = (args) => {
+            const human = args.includes("-h");
+            print("Filesystem      Size  Used Avail Use% Mounted on");
+            print("dev             2.0G     0  2.0G   0% /dev");
+            print("run             1.0G   1.2M  1.0G   1% /run");
+            if (human) {
+                print("/dev/sda2        20G   2.1G   17G  11% /");
+                print("/dev/sda1       512M   6.2M  506M   2% /boot");
+                print("tmpfs           992M     0  992M   0% /dev/shm");
+            } else {
+                print("/dev/sda2    20971520 2097152 18874368  11% /");
+                print("/dev/sda1      524288    6348   517940   2% /boot");
+                print("tmpfs         1015808       0  1015808   0% /dev/shm");
+            }
+        };
+        const handleDu = (args) => {
+            const human = args.includes("-h");
+            const sum = args.includes("-s");
+            const path = args.filter(a => !a.startsWith("-"))[0] || ".";
+            const node = getNode(path);
+            if (!node) { print("du: cannot access '" + path + "': No such file or directory"); return; }
+            const size = node.content ? node.content.length : 4096;
+            const display = human ? (size > 1024*1024 ? (size/1024/1024).toFixed(1) + "M" : size > 1024 ? (size/1024).toFixed(1) + "K" : size + "B") : size;
+            print(display + "\t" + path);
+        };
+        const handleFree = (args) => {
+            const human = args.includes("-h");
+            if (human) {
+                print("               total        used        free      shared  buff/cache   available");
+                print("Mem:           1.9Gi       312Mi       1.0Gi       8.0Mi       629Mi       1.5Gi");
+                print("Swap:          1.0Gi          0B       1.0Gi");
+            } else {
+                print("               total        used        free      shared  buff/cache   available");
+                print("Mem:           1984.3       312.4      1042.0         8.0       629.9      1502.1");
+                print("Swap:          1024.0         0.0      1024.0");
+            }
+        };
+        const handleDd = (args) => {
+            const of = args.indexOf("of=") !== -1 ? args[args.indexOf("of=") + 1] : null;
+            print("dd: simulated — no actual I/O performed");
+            print("1+0 records in");
+            print("1+0 records out");
+            print("512 bytes copied, 0.001 s, 512.0 kB/s");
+        };
+
+        // --- Archive ---
+        const handleTar = (args) => {
+            if (args.includes("-x") || args.includes("--extract")) {
+                const f = args.indexOf("-f") !== -1 ? args[args.indexOf("-f") + 1] : (args.indexOf("--file") !== -1 ? args[args.indexOf("--file") + 1] : "archive.tar");
+                print("tar: " + f + ": simulated extraction complete");
+            } else if (args.includes("-c") || args.includes("--create")) {
+                print("tar: simulated archive created");
+            } else { print("tar: usage: tar -xvf <archive> or tar -czvf <archive> <files>"); }
+        };
+        const handleGzip = (args, cmd) => {
+            const files = args.filter(a => !a.startsWith("-"));
+            if (!files[0]) { print("gzip: compressed data not written to a terminal"); return; }
+            print(files[0] + ": " + (cmd.startsWith("gunzip") || cmd.startsWith("zcat") ? "decompwessed" : "compwessed") + " (simulated) UwU");
+        };
+        const handleXz = (args, cmd) => {
+            const files = args.filter(a => !a.startsWith("-"));
+            if (!files[0]) { print("xz: compressed data not written to a terminal"); return; }
+            print(files[0] + ": " + (cmd.startsWith("unxz") ? "decompwessed" : "compwessed") + " (simulated) UwU");
+        };
+
+        // --- Package/System ---
+        const handlePacman = (args, rawCmd) => {
+            if (VirtualKernel.powerState === "STAGE3_PACMAN") {
+                if (args === "4") { handleCoreSync(); VirtualKernel.bootFlags.coreSyncDone = true; saveState(); }
+                else { print("Sorry, try again."); print("[sudo] password for jew: "); }
+                return;
+            }
+            if (args.includes("-Sy") && args.includes("core-sync") && !VirtualKernel.bootFlags.coreSyncDone) {
+                print(":: Synchronizing package databases...");
+                print(" core-sync is up to date");
+                print("");
+                print("Packages (1) core-sync-1.0.0-1");
+                print("");
+                print("Total Installed Size:  1.2 MiB");
+                print("");
+                print(":: Proceed with installation? [Y/n] y");
+                print(":: Processing package changes...");
+                print(":: core-sync installed");
+                VirtualKernel.bootFlags.coreSyncDone = true;
+                print("");
+                print("SIMULATION COMPLETE. SYSTEM SECURE.");
+                saveState();
+                return;
+            }
+            if (args.includes("-S") || args.includes("-Sy") || args.includes("-Syu")) {
+                if (args.includes("core-sync") && VirtualKernel.bootFlags.coreSyncDone) {
+                    print(":: core-sync is up to date");
+                    return;
+                }
+                print(":: Synchronizing package databases...");
+                if (args.includes("-S")) { print("resolving dependencies..."); print("looking for conflicting packages..."); }
+                print(":: everything is up to date");
+            } else if (args.includes("-R")) {
+                const pkg = args[args.indexOf("-R") + 1] || "target";
+                print("removing " + pkg + " (simulated)");
+            } else if (args.includes("-Q")) {
+                const q = args.indexOf("-Q") !== -1 ? args.slice(args.indexOf("-Q") + 1).filter(a => !a.startsWith("-")) : [];
+                print("core-sync 1.0.0-1");
+                if (q.length) q.forEach(p => print(p + " 1.0.0-1"));
+            } else if (args.includes("-Ss")) {
+                const q = args[args.indexOf("-Ss") + 1] || "";
+                print("core/core-sync 1.0.0-1");
+                print("    Secure network configuration repository endpoint.");
+            } else { print("pacman: unknown option"); }
+        };
+        const handleReflector = (args) => {
+            print("reflector: simulated — using default Arch mirrors");
+            print("Server = https://mirror.archlinux.de/archlinux/\$repo/os/\$arch");
+            print("Server = https://mirror.rackspace.com/archlinux/\$repo/os/\$arch");
+        };
+        const handleTimedatectl = (args) => {
+            if (args.includes("set-ntp")) {
+                const val = args[args.indexOf("set-ntp") + 1];
+                if (val === "true") { VirtualKernel.systemClock.hwClockSynced = true; print("NTP sync enabled"); }
+                else { VirtualKernel.systemClock.hwClockSynced = false; print("NTP sync disabled"); }
+                return;
+            }
+            if (args.includes("set-timezone") || args.includes("set-time") || args.includes("set-local-rtc")) {
+                print("timedatectl: Operation not permitted (use 'ln -sf' to set timezone)");
+                return;
+            }
+            print("               Local time: Tue 2026-06-09 16:30:11 WIB");
+            print("           Universal time: Tue 2026-06-09 09:30:11 UTC");
+            print("                 RTC time: Tue 2026-06-09 09:30:11");
+            print("                Time zone: " + (VirtualKernel.systemClock.timeZone || "Asia/Jakarta") + " (WIB, +0700)");
+            print("System clock synchronized: " + (VirtualKernel.systemClock.hwClockSynced ? "yes" : "no"));
+            print("              NTP service: " + (VirtualKernel.systemClock.hwClockSynced ? "active" : "inactive"));
+        };
+        const handleHwclock = (args) => {
+            if (args.includes("--systohc")) { VirtualKernel.systemClock.hwClockSynced = true; print("hwclock: hardware clock set from system clock"); }
+            else if (args.includes("--hctosys")) { print("hwclock: system clock set from hardware clock"); }
+            else { print("hwclock: current hardware clock: 2026-06-09 09:30:11 UTC"); }
+        };
+        const handleLocaleGen = () => {
+            print("Generating locales...");
+            print("en_US.UTF-8... done");
+            print("en_US.UTF-8 has been generated");
+        };
+        const handleLocalectl = (args) => {
+            if (args.includes("set-locale")) {
+                const i = args.indexOf("set-locale") + 1;
+                if (i < args.length) print("localectl: locale " + args[i] + " set");
+                else print("localectl: missing locale");
+            } else {
+                print("   System Locale: LANG=en_US.UTF-8");
+                print("       VC Keymap: us");
+                print("      X11 Layout: us");
+            }
+        };
+        const handlePasswd = (args) => {
+            const user = args[0] || "jew";
+            if (!VirtualKernel.isChrooted) { print("passwd: You may not view or modify password data for " + user + "."); return; }
+            print("Enter new UNIX password: ");
+            print("Retype new UNIX password: ");
+            print("passwd: password updated successfully");
+        };
+        const handleSystemctl = (args) => {
+            const svc = args.filter(a => !a.startsWith("-"))[0] || "";
+            if (args.includes("enable")) { print("Created symlink /etc/systemd/system/multi-user.target.wants/" + svc + " → /usr/lib/systemd/system/" + svc); }
+            else if (args.includes("start")) { print("Job for " + svc + ".service started."); }
+            else if (args.includes("status")) {
+                print(svc + ".service - " + svc.charAt(0).toUpperCase() + svc.slice(1) + " Service");
+                print("     Loaded: loaded /usr/lib/systemd/system/" + svc + ".service (enabled)");
+                print("     Active: active (running) since Tue 2026-06-09 15:48:11 WIB");
+                print("   Main PID: 12345 (sd-pam)");
+                print("      Tasks: 2 (limit: 18841)");
+                print("     Memory: 1.2M");
+            }
+            else if (args.includes("--version")) { print("systemd 255 (255.4-1-arch)"); }
+            else { print("systemctl: missing arguments"); }
+        };
+        const handleUseradd = (args) => {
+            const rest = args.filter(a => !a.startsWith("-"));
+            const user = rest[0] || "";
+            const m = args.includes("-m"); const G = args.indexOf("-G") !== -1 ? args[args.indexOf("-G") + 1] : "";
+            if (!user) { print("useradd: missing operand"); return; }
+            if (!VirtualKernel.isChrooted) { print("useradd: cannot lock /etc/passwd; try again later."); return; }
+            print("useradd: adding user '" + user + "'");
+            if (m) print("Creating home directory /home/" + user + "...");
+            if (G) print("Adding user to group " + G + "...");
+        };
+        const handleMkinitcpio = (args) => {
+            if (args.includes("-p") || args.includes("--preset")) {
+                print("==> Building image from preset: /etc/mkinitcpio.d/" + (args[args.indexOf("-p") + 1] || "linux") + ".preset");
+                print("==> Using default configuration file: /etc/mkinitcpio.conf");
+                print("==> Generating /boot/initramfs-linux.img...");
+                print("==> WARNING: No microcode image found. Continuing...");
+                print("==> Image generation successful.");
+            } else { print("mkinitcpio: missing preset"); }
+        };
+
+        // --- Misc utilities ---
+        const handleWhich = (args) => {
+            if (!args[0]) { print("which: missing argument"); return; }
+            const paths = (VirtualKernel.env?.PATH || "").split(":");
+            print("/usr/bin/" + args[0]);
+        };
+        const handleType_ = (args) => {
+            if (!args[0]) { print("type: missing argument"); return; }
+            print(args[0] + " is hashed (/usr/bin/" + args[0] + ")");
+        };
+        const handleEnv = () => { Object.entries(VirtualKernel.env || {}).forEach(([k, v]) => print(k + "=" + v)); };
+        const handleExport = (args, rawCmd) => {
+            const m = rawCmd.match(/export\s+(?:(\w+)=["']?(.*?)["']?$|(\w+))/);
+            if (m) {
+                const k = m[1] || m[3]; const v = m[2] || "";
+                if (k && v) VirtualKernel.env[k] = v;
+                else if (k) print("export: " + k + "=" + (VirtualKernel.env[k] || ""));
+            }
+        };
+        const handleTrue = () => {};
+        const handleFalse = () => { /* return non-zero (no-op in sim) */ };
+        const handleYes = (args) => {
+            const s = args[0] || "y";
+            for (let i = 0; i < 5; i++) print(s);
+        };
+        const handleBc = (args) => {
+            const expr = args.join(" ");
+            if (!expr) { print("bc: no expression given"); return; }
+            try { const r = Function('"use strict"; return (' + expr + ')')(); print(r.toString()); } catch (e) { print("bc: syntax error"); }
+        };
+        const handleSeq = (args) => {
+            const nums = args.filter(a => !a.startsWith("-"));
+            const last = parseFloat(nums[nums.length - 1] || "1");
+            const first = nums.length >= 2 ? parseFloat(nums[0]) : 1;
+            for (let i = first; i <= last; i++) print(i);
+        };
+        const handlePrintf = (args, rawCmd) => {
+            print(rawCmd.substring(rawCmd.indexOf(" ") + 1).replace(/\\n/g, "\n").replace(/\\t/g, "\t"));
+        };
+        const handleSleep = async (args) => {
+            const secs = parseFloat(args[0]);
+            if (isNaN(secs)) { print("sleep: invalid time interval"); return; }
+            if (secs > 10) { print("sleep: refusing to sleep more than 10 seconds (simulated)"); return; }
+            await delay(secs * 1000);
+        };
+        const handleWatch = (args, rawCmd) => {
+            const nIdx = args.indexOf("-n");
+            const interval = nIdx !== -1 ? parseInt(args[nIdx + 1]) || 2 : 2;
+            const cmdIdx = args.indexOf("--") !== -1 ? args.indexOf("--") + 1 : (nIdx !== -1 ? nIdx + 2 : 0);
+            const watched = args.slice(cmdIdx).join(" ") || args[args.length - 1] || "unknown";
+            print("Every " + interval + ".0s: " + watched);
+            print("");
+            print("(simulated — press Ctrl+C to stop)");
+        };
+        const handleTee = (args, rawCmd) => {
+            const m = rawCmd.match(/tee\s+(.+)/);
+            if (!m) { print("tee: missing file operand"); return; }
+            const files = m[1].split(/\s+/).filter(a => !a.startsWith("-"));
+            files.forEach(f => { const r = ensureParent(f); if (r) r.parent.children[r.name] = { type: "f", content: "" }; });
+            print("tee: written to " + files.join(", "));
+        };
+        const handleXargs = (args, rawCmd) => {
+            print("xargs: simulated — no output");
+        };
+        const handleTest = (args, rawCmd) => {
+            print("(test evaluated — no output means true)");
+        };
+        const handleExpr = (args) => {
+            const expr = args.join(" ");
+            try { const r = Function('"use strict"; return (' + expr + ')')(); print(r.toString()); } catch (e) { print("expr: syntax error"); }
+        };
+        const handleDirname = (args) => {
+            if (!args[0]) { print("dirname: missing operand"); return; }
+            const p = args[0].replace(/\/+$/, "").split("/");
+            p.pop();
+            print(p.join("/") || "/");
+        };
+        const handleBasename = (args) => {
+            if (!args[0]) { print("basename: missing operand"); return; }
+            print(args[0].replace(/\/+$/, "").split("/").pop() || "/");
+        };
+        const handleReadlink = (args) => {
+            if (!args[0]) { print("readlink: missing operand"); return; }
+            const node = getNode(args[0]);
+            if (!node) { print("readlink: " + args[0] + ": No such file or directory"); return; }
+            print(node.target || args[0]);
+        };
+        const handleMktemp = (args) => {
+            const dir = args.includes("-d");
+            const tmp = dir ? "tmp.XXXXXXXXXX" : "tmp.XXXXXXXXXX";
+            print("/tmp/" + tmp.replace("X", Math.random().toString(36).slice(2, 5)).replace(/X/g, () => Math.random().toString(36).slice(2, 3)));
+        };
+        const handleSync = () => { print("sync: syncing disks (simulated)"); };
+        const handleNice = (args, rawCmd) => { print("nice: simulated — running with adjusted priority"); };
+        const handleNohup = (args, rawCmd) => { print("nohup: ignoring input and appending output to 'nohup.out'"); };
+        const handleLsusb = () => {
+            print("Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub");
+            print("Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub");
+        };
+        const handleLspci = () => {
+            print("00:00.0 Host bridge: Intel Corporation 440FX - 82441FX PMC [Natoma]");
+            print("00:01.0 ISA bridge: Intel Corporation 82371SB PIIX3 ISA [Natoma/Triton II]");
+            print("00:02.0 VGA compatible controller: VMware SVGA II Adapter");
+            print("00:03.0 Ethernet controller: Intel Corporation 82540EM Gigabit Ethernet Controller");
+        };
+        const handleLscpu = () => {
+            print("Architecture:            x86_64");
+            print("CPU op-mode(s):         32-bit, 64-bit");
+            print("Address sizes:          39 bits physical, 48 bits virtual");
+            print("Byte Order:             Little Endian");
+            print("CPU(s):                 4");
+            print("Model name:            Intel(R) Core(TM) i7-8700K CPU @ 3.70GHz");
+        };
+        const handleSensors = () => {
+            print("acpitz-acpi-0");
+            print("Adapter: ACPI interface");
+            print("temp1:        +42.0°C (crit = +105.0°C)");
+            print("");
+            print("coretemp-isa-0000");
+            print("Adapter: ISA adapter");
+            print("Package id 0:  +45.0°C (high = +100.0°C, crit = +105.0°C)");
+        };
+        const handleLsmod = () => {
+            print("Module                  Size  Used by");
+            print("ext4                  491520  1");
+            print("vfat                   24576  1");
+            print("fat                    81920  1 vfat");
+            print("xhci_pci               16384  0");
+        };
+        const handleModprobe = (args) => {
+            if (!args[0]) { print("modprobe: missing module name"); return; }
+            print("modprobe: module '" + args[0] + "' loaded (simulated)");
+        };
+        const handleModinfo = (args) => {
+            if (!args[0]) { print("modinfo: missing module name"); return; }
+            print("filename:       /usr/lib/modules/6.7.0-arch1-1/kernel/" + args[0] + ".ko");
+            print("license:        GPL");
+            print("description:    " + args[0] + " kernel module");
+            print("depends:        ");
+        };
+        const handleDmesg = (args) => {
+            const n = args.includes("-n") ? 0 : 20;
+            const lines = [
+                "[    0.000000] Linux version 6.7.0-arch1-1 (linux@archlinux)",
+                "[    0.010000] Command line: BOOT_IMAGE=/vmlinuz-linux root=/dev/sda2 ro quiet",
+                "[    0.020000] x86/fpu: x87 FPU will use FXSAVE",
+                "[    0.300000] ehci_hcd: USB 2.0 'Enhanced' Host Controller (EHCI) Driver",
+                "[    0.500000] ata1: SATA max UDMA/133 abar m2048@0xfebf8000 port 0xfebf8100 irq 25",
+                "[    1.200000] EXT4-fs (sda2): mounted filesystem with ordered data mode. Quota mode: none.",
+                "[    1.800000] systemd[1]: systemd 255 running in system mode (+PAM +AUDIT +SELINUX +APPARMOR)",
+                "[    2.100000] systemd[1]: Detected virtualization oracle, in a container!",
+                "[    2.500000] systemd[1]: Reached target Local File Systems.",
+                "[    3.200000] systemd[1]: Started Journal Service.",
+                "[ 4187.234567] sshd[1234]: Accepted public key for jew from 192.168.1.100 port 54321",
+            ];
+            lines.slice(-n).forEach(l => print(l));
+        };
+        const handleCrontab = (args) => {
+            if (args.includes("-e")) { print("crontab: installing new crontab (simulated)"); }
+            else if (args.includes("-l")) { print("no crontab for jew"); }
+            else if (args.includes("-r")) { print("crontab: removing crontab (simulated)"); }
+            else { print("crontab: usage: crontab [-u user] [-e|-l|-r]"); }
+        };
+        const handleScreen = (args) => { print("screen: terminal multiplexer started (simulated)"); };
+        const handleTmux = (args) => { print("tmux: terminal multiplexer started (simulated)"); };
+        const handleMan = (args) => {
+            if (!args[0]) { print("man: what manual page do you want?"); return; }
+            print("Man page '" + args[0] + "' not available in simulated environment");
+        };
+        const handleVim = (args) => { handleEditor(args); };
 
         const processCommand = async (input) => {
             const cmd = input.trim();
@@ -1170,6 +1915,7 @@
             const args = parts.slice(1);
 
             switch(baseCmd) {
+                // --- Navigation & help ---
                 case 'help':
                 case 'hint':
                     printHint();
@@ -1180,20 +1926,86 @@
                         print("hehe, aww gone! :3");
                     }
                     break;
-                case 'ping':
-                    await handlePing(args);
+                // --- File system navigation ---
+                case 'ls':
+                    handleLs(args);
                     break;
+                case 'cd':
+                    handleCd(args);
+                    break;
+                case 'cat':
+                    handleCat(args);
+                    break;
+                case 'pwd':
+                    print(VirtualKernel.currentDirectory);
+                    break;
+                // --- File operations ---
+                case 'mkdir':
+                    handleMkdir(args);
+                    break;
+                case 'touch':
+                    handleTouch(args);
+                    break;
+                case 'cp':
+                    handleCp(args);
+                    break;
+                case 'mv':
+                    handleMv(args);
+                    break;
+                case 'rm':
+                    await handleRm(args);
+                    break;
+                case 'chmod':
+                    handleChmod(args);
+                    break;
+                case 'chown':
+                    handleChown(args);
+                    break;
+                case 'dd':
+                    handleDd(args);
+                    break;
+                // --- Disk / Partitioning ---
+                case 'lsblk':
+                case 'fdisk':
+                    print("NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT");
+                    print("sda      8:0    0   20G  0 disk ");
+                    print("├─sda1   8:1    0  512M  0 part " + (VirtualKernel.mounts["/mnt/boot"] === "/dev/sda1" ? "/mnt/boot" : ""));
+                    print("└─sda2   8:2    0 19.5G  0 part " + (VirtualKernel.mounts["/mnt"] === "/dev/sda2" ? "/mnt" : ""));
+                    break;
+                case 'blkid':
+                    handleBlkid(args);
+                    break;
+                case 'findmnt':
+                    handleFindmnt();
+                    break;
+                case 'parted':
+                case 'gdisk':
+                    print(baseCmd + ": simulated — disk layout is fixed (GPT with sda1=512M vfat, sda2=19.5G ext4)");
+                    break;
+                // --- Filesystem creation ---
                 case 'mkfs.ext4':
                 case 'mkfs.vfat':
                 case 'mkfs.fat':
                     await handleMkfs(args);
                     break;
+                // --- Mounting ---
                 case 'mount':
                     handleMount(args);
                     break;
+                case 'umount':
+                    print("umount: simulated — device unmounted");
+                    break;
+                // --- Package installation ---
                 case 'pacstrap':
                     await handlePacstrap(args);
                     break;
+                case 'pacman':
+                    handlePacman(args, cmd);
+                    break;
+                case 'reflector':
+                    handleReflector(args);
+                    break;
+                // --- System configuration ---
                 case 'genfstab':
                     handleGenfstab(args);
                     break;
@@ -1206,43 +2018,315 @@
                 case 'echo':
                     handleEcho(args, cmd);
                     break;
-                case 'grub-install':
-                    await handleGrubInstall(args);
-                    break;
-                case 'grub-mkconfig':
-                    await handleGrubMkconfig(args);
-                    break;
                 case 'exit':
                     handleExit();
                     break;
                 case 'reboot':
                     await handleReboot();
                     break;
-                case 'ls':
-                    handleLs(args);
+                case 'passwd':
+                    handlePasswd(args);
                     break;
-                case 'cd':
-                    handleCd(args);
+                case 'useradd':
+                    handleUseradd(args);
                     break;
-                case 'cat':
-                    handleCat(args);
+                case 'usermod':
+                    print("usermod: simulated — user modified");
                     break;
+                case 'timedatectl':
+                    handleTimedatectl(args);
+                    break;
+                case 'hwclock':
+                    handleHwclock(args);
+                    break;
+                case 'locale-gen':
+                    handleLocaleGen();
+                    break;
+                case 'localectl':
+                    handleLocalectl(args);
+                    break;
+                case 'hostnamectl':
+                    handleHostnamectl(args);
+                    break;
+                case 'mkinitcpio':
+                    handleMkinitcpio(args);
+                    break;
+                case 'systemctl':
+                    handleSystemctl(args);
+                    break;
+                // --- Bootloader ---
+                case 'grub-install':
+                    await handleGrubInstall(args);
+                    break;
+                case 'grub-mkconfig':
+                    await handleGrubMkconfig(args);
+                    break;
+                // --- Editors ---
                 case 'micro':
                 case 'nano':
+                case 'vim':
+                case 'vi':
                     handleEditor(args);
                     break;
+                // --- Privilege escalation ---
                 case 'sudo':
                     handleSudo(args, cmd);
                     break;
-                case 'rm':
-                    await handleRm(args);
+                // --- Networking ---
+                case 'ping':
+                    await handlePing(args);
                     break;
-                case 'lsblk':
-                case 'fdisk':
-                    print("NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT");
-                    print("sda      8:0    0   20G  0 disk ");
-                    print("├─sda1   8:1    0  512M  0 part " + (VirtualKernel.mounts["/mnt/boot"] === "/dev/sda1" ? "/mnt/boot" : ""));
-                    print("└─sda2   8:2    0 19.5G  0 part " + (VirtualKernel.mounts["/mnt"] === "/dev/sda2" ? "/mnt" : ""));
+                case 'ip':
+                    handleIp(args);
+                    break;
+                case 'iwctl':
+                    handleIwctl(args);
+                    break;
+                case 'dhcpcd':
+                    handleDhcpcd(args);
+                    break;
+                case 'curl':
+                    handleCurl(args);
+                    break;
+                case 'wget':
+                    handleWget(args);
+                    break;
+                case 'nmcli':
+                    handleNmcli(args);
+                    break;
+                case 'wpa_supplicant':
+                case 'wpa_passphrase':
+                    print(baseCmd + ": simulated — wireless configuration skipped");
+                    break;
+                // --- Archive / Compression ---
+                case 'tar':
+                    handleTar(args);
+                    break;
+                case 'gzip':
+                case 'gunzip':
+                case 'zcat':
+                    handleGzip(args, baseCmd);
+                    break;
+                case 'xz':
+                case 'unxz':
+                case 'xzcat':
+                    handleXz(args, baseCmd);
+                    break;
+                // --- Text processing ---
+                case 'grep':
+                    handleGrep(args);
+                    break;
+                case 'head':
+                    handleHead(args);
+                    break;
+                case 'tail':
+                    handleTail(args);
+                    break;
+                case 'wc':
+                    handleWc(args);
+                    break;
+                case 'sort':
+                    handleSort(args);
+                    break;
+                case 'uniq':
+                    handleUniq(args);
+                    break;
+                case 'less':
+                    handleLess(args);
+                    break;
+                case 'more':
+                    handleMore(args);
+                    break;
+                case 'sed':
+                    handleSed(args, cmd);
+                    break;
+                case 'awk':
+                    print("awk: simulated — no pattern matched");
+                    break;
+                case 'cut':
+                    handleCut(args);
+                    break;
+                case 'tr':
+                    handleTr(args);
+                    break;
+                case 'diff':
+                    handleDiff(args);
+                    break;
+                // --- Process management ---
+                case 'ps':
+                    handlePs(args);
+                    break;
+                case 'top':
+                    handleTop();
+                    break;
+                case 'kill':
+                    handleKill(args);
+                    break;
+                case 'killall':
+                    handleKillall(args);
+                    break;
+                case 'nohup':
+                    handleNohup(args, cmd);
+                    break;
+                case 'nice':
+                case 'renice':
+                    handleNice(args, cmd);
+                    break;
+                // --- System info ---
+                case 'uname':
+                    handleUname(args);
+                    break;
+                case 'arch':
+                    handleArch();
+                    break;
+                case 'uptime':
+                    handleUptime();
+                    break;
+                case 'w':
+                    handleW();
+                    break;
+                case 'who':
+                    handleWho();
+                    break;
+                case 'whoami':
+                    handleWhoami();
+                    break;
+                case 'id':
+                    handleId(args);
+                    break;
+                case 'groups':
+                    handleGroups();
+                    break;
+                case 'logname':
+                    handleLogname();
+                    break;
+                case 'date':
+                    handleDate(args);
+                    break;
+                case 'cal':
+                    handleCal();
+                    break;
+                case 'env':
+                    handleEnv();
+                    break;
+                case 'export':
+                    handleExport(args, cmd);
+                    break;
+                case 'printenv':
+                    handleEnv();
+                    break;
+                // --- Hardware info ---
+                case 'lsusb':
+                    handleLsusb();
+                    break;
+                case 'lspci':
+                    handleLspci();
+                    break;
+                case 'lscpu':
+                    handleLscpu();
+                    break;
+                case 'sensors':
+                    handleSensors();
+                    break;
+                case 'lsmod':
+                    handleLsmod();
+                    break;
+                case 'modprobe':
+                    handleModprobe(args);
+                    break;
+                case 'modinfo':
+                    handleModinfo(args);
+                    break;
+                case 'depmod':
+                    print("depmod: processing dependencies (simulated)");
+                    break;
+                case 'dmesg':
+                    handleDmesg(args);
+                    break;
+                // --- Disk usage ---
+                case 'df':
+                    handleDf(args);
+                    break;
+                case 'du':
+                    handleDu(args);
+                    break;
+                case 'free':
+                    handleFree(args);
+                    break;
+                // --- Utilities ---
+                case 'bc':
+                    handleBc(args);
+                    break;
+                case 'seq':
+                    handleSeq(args);
+                    break;
+                case 'printf':
+                    handlePrintf(args, cmd);
+                    break;
+                case 'which':
+                    handleWhich(args);
+                    break;
+                case 'type':
+                    handleType_(args);
+                    break;
+                case 'true':
+                    handleTrue();
+                    break;
+                case 'false':
+                    handleFalse();
+                    break;
+                case 'yes':
+                    handleYes(args);
+                    break;
+                case 'sleep':
+                    await handleSleep(args);
+                    break;
+                case 'watch':
+                    handleWatch(args, cmd);
+                    break;
+                case 'tee':
+                    handleTee(args, cmd);
+                    break;
+                case 'xargs':
+                    handleXargs(args, cmd);
+                    break;
+                case 'test':
+                case '[':
+                    handleTest(args, cmd);
+                    break;
+                case 'expr':
+                    handleExpr(args);
+                    break;
+                case 'dirname':
+                    handleDirname(args);
+                    break;
+                case 'basename':
+                    handleBasename(args);
+                    break;
+                case 'readlink':
+                    handleReadlink(args);
+                    break;
+                case 'realpath':
+                    print("realpath: " + (args[0] ? resolvePath(args[0]) : VirtualKernel.currentDirectory));
+                    break;
+                case 'mktemp':
+                    handleMktemp(args);
+                    break;
+                case 'sync':
+                    handleSync();
+                    break;
+                case 'crontab':
+                    handleCrontab(args);
+                    break;
+                case 'screen':
+                    handleScreen(args);
+                    break;
+                case 'tmux':
+                    handleTmux(args);
+                    break;
+                case 'man':
+                case 'info':
+                    handleMan(args);
                     break;
                 default:
                     print(`${baseCmd}: oh no! you make a fuckuo buingo! Uwu`);
