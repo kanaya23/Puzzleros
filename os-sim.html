@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile OS Installation Simulator</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            color: #ffb000;
+            font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, Courier, monospace;
+            font-size: 14px;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #terminal {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        #output {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #input-line {
+            display: flex;
+            align-items: center;
+            min-height: 24px;
+        }
+
+        #prompt {
+            margin-right: 5px;
+            white-space: nowrap;
+        }
+
+        #command-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #ffb000;
+            font-family: inherit;
+            font-size: inherit;
+            outline: none;
+            caret-color: #ffb000;
+            padding: 0;
+            margin: 0;
+        }
+
+        /* Editor Overlay */
+        #editor {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #000;
+            color: #ffb000;
+            z-index: 100;
+            flex-direction: column;
+            font-family: inherit;
+        }
+
+        #editor-header {
+            padding: 10px;
+            border-bottom: 1px solid #ffb000;
+            text-align: center;
+            font-weight: bold;
+            background: #111;
+        }
+
+        #editor-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 14px;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .editor-line {
+            padding: 8px 5px;
+            border-bottom: 1px dashed #333;
+            cursor: pointer;
+            user-select: none;
+            -webkit-tap-highlight-color: rgba(255, 176, 0, 0.2);
+        }
+
+        .editor-line.commented {
+            color: #888;
+        }
+
+        #editor-footer {
+            display: flex;
+            justify-content: space-around;
+            padding: 15px 10px;
+            border-top: 1px solid #ffb000;
+            background: #111;
+        }
+
+        #editor-footer button {
+            background: transparent;
+            border: 1px solid #ffb000;
+            color: #ffb000;
+            padding: 10px 20px;
+            font-family: inherit;
+            font-size: 16px;
+            cursor: pointer;
+            flex: 1;
+            margin: 0 5px;
+        }
+        
+        #editor-footer button:active {
+            background: #ffb000;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal">
+        <div id="output"></div>
+        <div id="input-line">
+            <span id="prompt">C:\></span>
+            <input type="text" id="command-input" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
+    </div>
+
+    <div id="editor">
+        <div id="editor-header">/etc/pacman.conf</div>
+        <div id="editor-content"></div>
+        <div id="editor-footer">
+            <button id="editor-save">^O Save</button>
+            <button id="editor-exit">^X Exit</button>
+        </div>
+    </div>
+
+    <script>
+        const VirtualKernel = {
+            powerState: "MS_DOS",
+            currentDirectory: "/",
+            isChrooted: false,
+            networkState: {
+                linkSpeed: "1000Mbps",
+                hasCarrier: true,
+                dnsResolved: false
+            },
+            systemClock: {
+                utcTime: 1781023271000,
+                timeZone: null,
+                hwClockSynced: false
+            },
+            blockDevices: {
+                "/dev/sda": {
+                    size: "20.0 GiB",
+                    diskLabel: "gpt",
+                    partitions: {
+                        "/dev/sda1": { size: "512M", type: "vfat", formatted: false, label: "EFI System" },
+                        "/dev/sda2": { size: "19.5G", type: null, formatted: false, label: "Linux Filesystem" }
+                    }
+                }
+            },
+            mounts: {
+                "/mnt": null,
+                "/mnt/boot": null
+            },
+            fileSystem: {},
+            env: {
+                "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG": "en_US.UTF-8",
+                "SHELL": "/bin/bash"
+            },
+            mathSeries: [],
+            mathAnswer: 4,
+            bootFlags: {
+                grubInstalled: false,
+                grubConfigured: false
+            }
+        };
+
+        const initFS = () => {
+            VirtualKernel.fileSystem = {
+                "/": {
+                    type: "d", children: {
+                        "dev": { type: "d", children: { "sda": { type: "b" }, "sda1": { type: "b" }, "sda2": { type: "b" } } },
+                        "sys": { type: "d", children: {} },
+                        "proc": { type: "d", children: {} },
+                        "mnt": { type: "d", children: {} },
+                        "etc": { type: "d", children: {
+                            "fstab": { type: "f", content: "" },
+                            "localtime": { type: "l", target: null },
+                            "hostname": { type: "f", content: "" },
+                            "pacman.conf": { type: "f", content: `# [testing]\n# Include = /etc/pacman.d/mirrorlist\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n\n[extra]\nInclude = /etc/pacman.d/mirrorlist\n\n# Secure Local Network Configuration Repository\n#[core-sync-repo]\n#Server = https://secure.network.local/endpoint` }
+                        } },
+                        "usr": { type: "d", children: {
+                            "bin": { type: "d", children: { "bash": { type: "f" } } },
+                            "share": { type: "d", children: { "zoneinfo": { type: "d", children: { "Asia": { type: "d", children: { "Jakarta": { type: "f", content: "ZoneInfo Data" } } } } } } }
+                        } },
+                        "boot": { type: "d", children: { "grub": { type: "d", children: { "grub.cfg": { type: "f", content: "" } } } } },
+                        "home": { type: "d", children: { "rank1": { type: "d", children: { "README.txt": { type: "f", content: "System active.\nTo configure connection links:\n1. Edit config in /etc/pacman.conf\n2. Uncomment the local target server.\n3. Synchronize package tree: sudo pacman -Sy core-sync" } } } } }
+                    }
+                }
+            };
+        };
+
+        const print = (text) => {
+            const output = document.getElementById('output');
+            const line = document.createElement('div');
+            line.textContent = text;
+            output.appendChild(line);
+            requestAnimationFrame(() => {
+                output.scrollTop = output.scrollHeight;
+            });
+        };
+
+        const resolvePath = (path) => {
+            let base = "";
+            if (VirtualKernel.isChrooted && !path.startsWith("/mnt")) {
+                base = "/mnt";
+            }
+            
+            if (path.startsWith("/")) {
+                path = base + path;
+            } else if (path === "~") {
+                path = base + "/home/rank1";
+            } else if (path.startsWith("~/")) {
+                path = base + "/home/rank1/" + path.slice(2);
+            } else {
+                let current = VirtualKernel.currentDirectory;
+                if (current === "/") current = "";
+                path = base + current + "/" + path;
+            }
+            
+            const parts = path.split("/").filter(p => p);
+            const resolved = [];
+            for (const p of parts) {
+                if (p === ".") continue;
+                if (p === "..") resolved.pop();
+                else resolved.push(p);
+            }
+            return "/" + resolved.join("/");
+        };
+
+        const getNode = (path) => {
+            const resolved = resolvePath(path);
+            if (resolved === "/") return VirtualKernel.fileSystem["/"];
+            
+            const parts = resolved.split("/").filter(p => p);
+            let node = VirtualKernel.fileSystem["/"];
+            for (const p of parts) {
+                if (!node.children || !node.children[p]) return null;
+                node = node.children[p];
+            }
+            return node;
+        };
+
+        const getPrompt = () => {
+            if (VirtualKernel.powerState === "STAGE1_INPUT") return "Input: ";
+            if (VirtualKernel.powerState === "STAGE2_SELECT") return "Input Option [1-2]: ";
+            if (VirtualKernel.powerState === "LIVE_ISO") {
+                const dir = VirtualKernel.currentDirectory === "/" ? "~" : VirtualKernel.currentDirectory;
+                return VirtualKernel.isChrooted ? "sh-5.2# " : `root@archiso ${dir} # `;
+            }
+            if (VirtualKernel.powerState === "STAGE3_LOGIN") return "arch-rank1 login: ";
+            if (VirtualKernel.powerState === "STAGE3_PASSWORD") return "Password: ";
+            if (VirtualKernel.powerState === "STAGE3_PACMAN") return ""; 
+            if (VirtualKernel.powerState === "INSTALLED_SHELL") {
+                const dir = VirtualKernel.currentDirectory.replace('/home/rank1', '~');
+                return `[rank1@arch-rank1 ${dir}]$ `;
+            }
+            return "C:\\>";
+        };
+
+        const updatePrompt = () => {
+            document.getElementById('prompt').textContent = getPrompt();
+            const input = document.getElementById('command-input');
+            if (VirtualKernel.powerState === "STAGE3_PASSWORD" || VirtualKernel.powerState === "STAGE3_PACMAN") {
+                input.type = "password";
+            } else {
+                input.type = "text";
+            }
+            input.focus();
+        };
+
+        const startStage1 = () => {
+            const X = Math.floor(Math.random() * 50) + 1;
+            VirtualKernel.mathSeries = Array.from({length: 7}, (_, i) => X + i);
+            print("Microsoft(R) MS-DOS(R) Version 6.22");
+            print("(C)Copyright Microsoft Corp 1981-1994.");
+            print("");
+            print("C:\\>");
+            print("Divide overflow");
+            print("");
+            print("To find the password solve");
+            print(`Question: Calculate the variance (Nilai Ragam) of [ ${VirtualKernel.mathSeries.join(', ')} ]`);
+            print("Input: _");
+            VirtualKernel.powerState = "STAGE1_INPUT";
+            printInstruction();
+        };
+
+        const startStage2 = () => {
+            print("Access Granted. Loading OS_SELECT.COM...");
+            print("");
+            print("Select a Linux distribution to install:");
+            print("1. Arch Linux (Manual Bootstrap)");
+            print("2. Ubuntu 24.04 LTS (Automated GUI Setup)");
+            print("");
+            print("Input Option [1-2]: _");
+            VirtualKernel.powerState = "STAGE2_SELECT";
+        };
+
+        const startArchInstall = () => {
+            print("Shifting execution context...");
+            print("Scanning x86 hardware...");
+            print("Loading live ISO installation environment...");
+            print("");
+            print("Tip: Type 'hint' at any prompt to view exact commands and explanations.");
+            VirtualKernel.powerState = "LIVE_ISO";
+            printInstruction();
+        };
+
+        const startStage3Boot = () => {
+            // Remap installed system files to root
+            const mntChildren = VirtualKernel.fileSystem["/"].children["mnt"].children;
+            Object.assign(VirtualKernel.fileSystem["/"].children, mntChildren);
+
+            print(":: Arch Linux 6.7.arch1-1 (TTY1)");
+            print("[  OK  ] Started Journal Service.");
+            print("[  OK  ] Started udev Coldplug Service.");
+            print("[  OK  ] Created Slice User Slices.");
+            print("[  OK  ] Started Accounts Service.");
+            print("[  OK  ] Reached target Multi-User System.");
+            print("");
+            VirtualKernel.powerState = "STAGE3_LOGIN";
+            printInstruction();
+        };
+
+        const printHint = () => {
+            if (VirtualKernel.powerState === "STAGE1_INPUT") {
+                print("Hint: The variance of any 7 consecutive integers is constant.");
+                print("Calculate the population variance (Nilai Ragam) of the series.");
+            } else if (VirtualKernel.powerState === "LIVE_ISO") {
+                if (!VirtualKernel.networkState.dnsResolved) {
+                    print("Hint: Verify remote host packet response: `ping -c 3 archlinux.org`");
+                } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].formatted) {
+                    print("Hint: Initialize raw block /dev/sda2 to system-standard ext4 formatting: `mkfs.ext4 /dev/sda2`");
+                } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].formatted) {
+                    print("Hint: Initialize the EFI system partition with FAT32: `mkfs.vfat /dev/sda1`");
+                } else if (!VirtualKernel.mounts["/mnt"]) {
+                    print("Hint: Mount formatted partition sda2 to root mount interface: `mount /dev/sda2 /mnt`");
+                } else if (!VirtualKernel.mounts["/mnt/boot"]) {
+                    print("Hint: Mount the EFI system partition to the boot directory: `mount /dev/sda1 /mnt/boot`");
+                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]) {
+                    print("Hint: Bootstrap essential core packages to the mountpoint: `pacstrap -K /mnt base linux linux-firmware`");
+                } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["fstab"].content === "") {
+                    print("Hint: Write system block references to fstab filesystem register: `genfstab -U /mnt >> /mnt/etc/fstab`");
+                } else if (!VirtualKernel.isChrooted) {
+                    print("Hint: Enter target partition chroot framework: `arch-chroot /mnt`");
+                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["localtime"].target) {
+                    print("Hint: Build relative local clock pointer: `ln -sf /usr/share/zoneinfo/Asia/Jakarta /etc/localtime`");
+                } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["hostname"].content === "") {
+                    print("Hint: Write machine network identity: `echo \"arch-rank1\" > /etc/hostname`");
+                } else if (!VirtualKernel.bootFlags.grubInstalled) {
+                    if (VirtualKernel.mounts["/mnt/boot"]) {
+                        print("Hint: Write EFI bootloader to the drive: `grub-install --target=x86_64-efi --efi-directory=/boot /dev/sda`");
+                    } else {
+                        print("Hint: Write partition bootloader blocks to sda: `grub-install /dev/sda`");
+                    }
+                } else if (!VirtualKernel.bootFlags.grubConfigured) {
+                    print("Hint: Build GRUB config file: `grub-mkconfig -o /boot/grub/grub.cfg`");
+                } else {
+                    print("Hint: Command chroot context termination: `exit`, then `reboot`");
+                }
+            } else if (VirtualKernel.powerState === "INSTALLED_SHELL") {
+                print("Hint: Read README.txt, edit /etc/pacman.conf, then run `sudo pacman -Sy core-sync`");
+            } else if (VirtualKernel.powerState === "STAGE3_PACMAN") {
+                print("Hint: The password is the same as the mathematical result from Stage 1.");
+            }
+        };
+
+        const printInstruction = () => {
+            print(""); // Visual spacer
+            if (VirtualKernel.powerState === "STAGE1_INPUT") {
+                print("[Instruction]: Resolve the arithmetic :3 lock.");
+            } else if (VirtualKernel.powerState === "LIVE_ISO") {
+                if (!VirtualKernel.networkState.dnsResolved) {
+                    print("[Instruction]: Check the internet connection by pinging archlinux.org");
+                } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].formatted) {
+                    print("[Instruction]: Fowormat the secondary target partition of the system disk.");
+                } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].formatted) {
+                    print("[Instruction]: Format the EFI system partition with a FAT filesystem.");
+                } else if (!VirtualKernel.mounts["/mnt"]) {
+                    print("[Instruction]: Associate the formatted workspace node with the default setup mount point.");
+                } else if (!VirtualKernel.mounts["/mnt/boot"]) {
+                    print("[Instruction]: Mount the EFI system partition to the boot directory.");
+                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]) {
+                    print("[Instruction]: Bootstrap basic base system structures, kernel packages, and firmware to the setup point.");
+                } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["fstab"].content === "") {
+                    print("[Instruction]: Establish persistent partition table records inside the system configuration path.");
+                } else if (!VirtualKernel.isChrooted) {
+                    print("[Instruction]: Pivot execution context into the target machine.");
+                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["localtime"].target) {
+                    print("[Instruction]: Form timezone configuration pathways for local Jakarta region.");
+                } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["hostname"].content === "") {
+                    print("[Instruction]: Define the system identifier as arch-rank1.");
+                } else if (!VirtualKernel.bootFlags.grubInstalled) {
+                    if (VirtualKernel.mounts["/mnt/boot"]) {
+                        print("[Instruction]: Install the UEFI bootloader to the system drive.");
+                    } else {
+                        print("[Instruction]: Install primary system load registers to the drive.");
+                    }
+                } else if (!VirtualKernel.bootFlags.grubConfigured) {
+                    print("[Instruction]: Build dynamic boot sequence configurations.");
+                } else {
+                    print("[Instruction]: Terminate active chroot process loops and reboot.");
+                }
+            } else if (VirtualKernel.powerState === "STAGE3_LOGIN") {
+                print("[Instruction]: Input authorized system user to proceed.");
+            } else if (VirtualKernel.powerState === "STAGE3_PASSWORD") {
+                print("[Instruction]: Provide the cryptographic key derived from the initial boot sequence.");
+            } else if (VirtualKernel.powerState === "INSTALLED_SHELL") {
+                print("[Instruction]: Review local system documentation to configure the secure network repository.");
+            } else if (VirtualKernel.powerState === "STAGE3_PACMAN") {
+                print("[Instruction]: Authenticate superuser privileges to finalize the package synchronization.");
+            }
+        };
+
+        const handlePing = (args) => {
+            if (args.includes("archlinux.org") || args.includes("8.8.8.8")) {
+                print("PING archlinux.org (95.217.163.246) 56(84) bytes of data.");
+                print("64 bytes from 95.217.163.246: icmp_seq=1 ttl=56 time=12.3 ms");
+                print("64 bytes from 95.217.163.246: icmp_seq=2 ttl=56 time=11.8 ms");
+                print("64 bytes from 95.217.163.246: icmp_seq=3 ttl=56 time=12.1 ms");
+                print("");
+                print("--- archlinux.org ping statistics ---");
+                print("3 packets transmitted, 3 received, 0% packet loss, time 2003ms");
+                VirtualKernel.networkState.dnsResolved = true;
+                printInstruction();
+            } else {
+                print("ping: unknown host or invalid syntax");
+            }
+        };
+
+        const handleMkfs = (args) => {
+            if (args.includes("/dev/sda2")) {
+                print("mke2fs 1.47.0 (5-Feb-2023)");
+                print("Creating filesystem with 5111808 4k blocks and 1278240 inodes");
+                print("Filesystem UUID: 12345678-1234-1234-1234-1234567890ab");
+                print("Allocating group tables: done");
+                print("Writing inode tables: done");
+                print("Creating journal (32768 blocks): done");
+                print("Writing superblocks and filesystem accounting information: done");
+                VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].formatted = true;
+                VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].type = "ext4";
+                printInstruction();
+            } else if (args.includes("/dev/sda1")) {
+                print("mkfs.fat 4.2 (2021-01-31)");
+                print("SHA-256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+                print("Creating filesystem with 524288 1k blocks and 0 inodes");
+                print("Filesystem UUID: 09876543-2109-8765-4321-0987654321ab");
+                print("Allocating group tables: done");
+                print("Writing inode tables: done");
+                print("Writing superblocks and filesystem accounting information: done");
+                VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].formatted = true;
+                VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].type = "vfat";
+                printInstruction();
+            } else {
+                print("mkfs: missing or invalid device");
+            }
+        };
+
+        const handleMount = (args) => {
+            if (args.length >= 2 && args[0] === "/dev/sda2" && args[1] === "/mnt") {
+                if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].formatted) {
+                    print("mount: /mnt: wrong fs type, bad option, bad superblock on /dev/sda2, missing codepage or helper program, or other error.");
+                    return;
+                }
+                VirtualKernel.mounts["/mnt"] = "/dev/sda2";
+                VirtualKernel.fileSystem["/"].children["mnt"].children = {
+                    "usr": { type: "d", children: {} },
+                    "etc": { type: "d", children: { "fstab": { type: "f", content: "" } } },
+                    "boot": { type: "d", children: {} }
+                };
+                printInstruction();
+            } else if (args.length >= 2 && args[0] === "/dev/sda1" && args[1] === "/mnt/boot") {
+                if (!VirtualKernel.mounts["/mnt"]) {
+                    print("mount: /mnt/boot: mount point does not exist");
+                    return;
+                }
+                VirtualKernel.mounts["/mnt/boot"] = "/dev/sda1";
+                printInstruction();
+            } else {
+                print("mount: invalid syntax");
+            }
+        };
+
+        const handlePacstrap = (args) => {
+            if (args.includes("/mnt") && args.includes("base") && args.includes("linux") && args.includes("linux-firmware")) {
+                if (!VirtualKernel.mounts["/mnt"]) {
+                    print("Error: /mnt is not a mountpoint.");
+                    return;
+                }
+                print("==> Creating install root at /mnt");
+                print("==> Installing packages to /mnt");
+                print(":: Synchronizing package databases...");
+                print(":: Installing packages to /mnt...");
+                print("resolving dependencies...");
+                print("looking for conflicting packages...");
+                print("");
+                print("Packages (5) base-3-2  linux-6.7.arch1-1  linux-firmware-20240115.911c6e3-1 ...");
+                print(":: Proceed with installation? [Y/n] y");
+                print(":: Retrieving packages...");
+                print(":: Processing package changes...");
+                
+                VirtualKernel.fileSystem["/"].children["mnt"].children["usr"] = { type: "d", children: { "bin": { type: "d", children: { "bash": { type: "f" } } } } };
+                VirtualKernel.fileSystem["/"].children["mnt"].children["etc"] = { type: "d", children: {
+                    "fstab": { type: "f", content: "" },
+                    "localtime": { type: "l", target: null },
+                    "hostname": { type: "f", content: "" },
+                    "pacman.conf": { type: "f", content: `# [testing]\n# Include = /etc/pacman.d/mirrorlist\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n\n[extra]\nInclude = /etc/pacman.d/mirrorlist\n\n# Secure Local Network Configuration Repository\n#[core-sync-repo]\n#Server = https://secure.network.local/endpoint` }
+                } };
+                VirtualKernel.fileSystem["/"].children["mnt"].children["boot"] = { type: "d", children: { "grub": { type: "d", children: { "grub.cfg": { type: "f", content: "" } } } } };
+                printInstruction();
+            } else {
+                print("pacstrap: invalid syntax or missing packages");
+            }
+        };
+
+        const handleGenfstab = (args) => {
+            if (args.includes("-U") && args.includes("/mnt")) {
+                if (!VirtualKernel.mounts["/mnt"]) {
+                    print("Error: /mnt is not a mountpoint.");
+                    return;
+                }
+                print("# /etc/fstab: static file system information.");
+                print("# <file system> <mount point>   <type>  <options>       <dump>  <pass>");
+                print("UUID=12345678-1234-1234-1234-1234567890ab /              ext4    rw,relatime   0 1");
+                if (VirtualKernel.mounts["/mnt/boot"]) {
+                    print("UUID=09876543-2109-8765-4321-0987654321ab /boot          vfat    rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1 0 2");
+                }
+                const node = getNode("/mnt/etc/fstab");
+                let fstabContent = "UUID=12345678-1234-1234-1234-1234567890ab /              ext4    rw,relatime   0 1\n";
+                if (VirtualKernel.mounts["/mnt/boot"]) {
+                    fstabContent += "UUID=09876543-2109-8765-4321-0987654321ab /boot          vfat    rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1 0 2\n";
+                }
+                if (node) node.content = fstabContent;
+                printInstruction();
+            } else {
+                print("genfstab: invalid syntax");
+            }
+        };
+
+        const handleChroot = (args) => {
+            if (args.includes("/mnt")) {
+                if (!VirtualKernel.mounts["/mnt"]) {
+                    print("arch-chroot: /mnt is not a mountpoint");
+                    return;
+                }
+                if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"] || !VirtualKernel.fileSystem["/"].children["mnt"].children["usr"].children["bin"] || !VirtualKernel.fileSystem["/"].children["mnt"].children["usr"].children["bin"].children["bash"]) {
+                    print("chroot: failed to run command '/usr/bin/bash': No such file or directory.");
+                    return;
+                }
+                VirtualKernel.isChrooted = true;
+                VirtualKernel.currentDirectory = "/";
+                printInstruction();
+            } else {
+                print("arch-chroot: invalid syntax");
+            }
+        };
+
+        const handleLn = (args) => {
+            if (args.includes("-sf") && args.includes("/usr/share/zoneinfo/Asia/Jakarta") && args.includes("/etc/localtime")) {
+                if (!VirtualKernel.isChrooted) {
+                    print("ln: /etc/localtime: Read-only file system or permission denied");
+                    return;
+                }
+                const targetNode = getNode("/etc/localtime");
+                if (targetNode) {
+                    targetNode.target = "/usr/share/zoneinfo/Asia/Jakarta";
+                    VirtualKernel.systemClock.timeZone = "Asia/Jakarta";
+                    printInstruction();
+                }
+            } else {
+                print("ln: invalid syntax");
+            }
+        };
+
+        const handleEcho = (args, rawCmd) => {
+            const match = rawCmd.match(/echo\s+(?:["']([^"']+)["']|([^>\s]+))\s*>\s*(.+)/);
+            if (match) {
+                const content = match[1] || match[2];
+                const targetPath = match[3].trim();
+                if (targetPath === "/etc/hostname") {
+                    if (!VirtualKernel.isChrooted) {
+                        print("bash: /etc/hostname: Permission denied");
+                        return;
+                    }
+                    const targetNode = getNode("/etc/hostname");
+                    if (targetNode) {
+                        targetNode.content = content;
+                        printInstruction();
+                    }
+                } else {
+                    print("bash: invalid target");
+                }
+            } else {
+                let text = rawCmd.substring(4).trim();
+                if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+                    text = text.substring(1, text.length - 1);
+                }
+                print(text);
+            }
+        };
+
+        const handleGrubInstall = (args) => {
+            if (args.includes("/dev/sda")) {
+                if (!VirtualKernel.isChrooted) {
+                    print("grub-install: error: /dev/sda is not accessible");
+                    return;
+                }
+                if (args.includes("--target=x86_64-efi")) {
+                    if (!VirtualKernel.mounts["/mnt/boot"]) {
+                        print("grub-install: error: cannot find a proper EFI directory.");
+                        return;
+                    }
+                    print("Installing for x86_64-efi platform.");
+                    print("Installation finished. No error reported.");
+                } else {
+                    print("Installing for i386-pc platform.");
+                    print("Installation finished. No error reported.");
+                }
+                VirtualKernel.bootFlags.grubInstalled = true;
+                printInstruction();
+            } else {
+                print("grub-install: invalid device");
+            }
+        };
+
+        const handleGrubMkconfig = (args) => {
+            if (args.includes("-o") && args.includes("/boot/grub/grub.cfg")) {
+                if (!VirtualKernel.isChrooted) {
+                    print("grub-mkconfig: permission denied");
+                    return;
+                }
+                print("Generating grub configuration file ...");
+                print("Found linux image: /boot/vmlinuz-linux");
+                print("Found initrd image: /boot/initramfs-linux.img");
+                print("done");
+                VirtualKernel.bootFlags.grubConfigured = true;
+                const node = getNode("/boot/grub/grub.cfg");
+                if (node) node.content = "GRUB CONFIG GENERATED";
+                printInstruction();
+            } else {
+                print("grub-mkconfig: invalid syntax");
+            }
+        };
+
+        const handleExit = () => {
+            if (VirtualKernel.isChrooted) {
+                VirtualKernel.isChrooted = false;
+                VirtualKernel.currentDirectory = "/";
+                printInstruction();
+            } else {
+                print("exit: not in chroot");
+            }
+        };
+
+        const handleReboot = () => {
+            if (VirtualKernel.isChrooted) {
+                print("reboot: must be superuser");
+                return;
+            }
+            if (!VirtualKernel.bootFlags.grubInstalled || !VirtualKernel.bootFlags.grubConfigured) {
+                print("Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0)");
+                print("Stwooop!!! Stwop nnngh~!!.");
+                return;
+            }
+            print("System is going down for reboot NOW!");
+            print("reboot: Restarting system");
+            VirtualKernel.powerState = "INSTALLED_BOOT";
+            setTimeout(startStage3Boot, 1500);
+        };
+
+        const handleLogin = (cmd) => {
+            if (cmd === "rank1") {
+                VirtualKernel.powerState = "STAGE3_PASSWORD";
+                printInstruction();
+            } else {
+                print("Login incorrect");
+                VirtualKernel.powerState = "STAGE3_LOGIN";
+            }
+        };
+
+        const handlePassword = (cmd) => {
+            if (cmd === "4") {
+                print("Last login: Tue Jun  9 16:30:11 WIB 2026 on tty1");
+                print("Welcome to Arch Linux!");
+                print("");
+                VirtualKernel.powerState = "INSTALLED_SHELL";
+                VirtualKernel.currentDirectory = "/home/rank1";
+                printInstruction();
+            } else {
+                print("Login incorrect");
+                VirtualKernel.powerState = "STAGE3_LOGIN";
+            }
+        };
+
+        const handleLs = (args) => {
+            const path = args[0] || VirtualKernel.currentDirectory;
+            const node = getNode(path);
+            if (!node || node.type !== "d") {
+                print(`ls: cannot access '${path}': No such file or directory`);
+                return;
+            }
+            const children = Object.keys(node.children);
+            print(children.join("  "));
+        };
+
+        const handleCd = (args) => {
+            const path = args[0] || "/";
+            const node = getNode(path);
+            if (!node || node.type !== "d") {
+                print(`bash: cd: ${path}: No such file or directory`);
+                return;
+            }
+            VirtualKernel.currentDirectory = resolvePath(path);
+        };
+
+        const handleCat = (args) => {
+            const path = args[0];
+            if (!path) {
+                print("cat: missing file operand");
+                return;
+            }
+            const node = getNode(path);
+            if (!node) {
+                print(`cat: ${path}: No such file or directory`);
+                return;
+            }
+            if (node.type === "d") {
+                print(`cat: ${path}: Is a directory`);
+                return;
+            }
+            print(node.content || "");
+        };
+
+        const openEditor = (node, path) => {
+            const editor = document.getElementById('editor');
+            const content = document.getElementById('editor-content');
+            editor.style.display = 'flex';
+            content.innerHTML = '';
+            
+            let lines = node.content.split('\n');
+            const renderLines = () => {
+                content.innerHTML = '';
+                lines.forEach((line, index) => {
+                    const div = document.createElement('div');
+                    div.className = 'editor-line';
+                    if (line.startsWith('#')) {
+                        div.classList.add('commented');
+                    }
+                    div.textContent = line;
+                    div.onclick = () => {
+                        if (line.startsWith('#')) {
+                            lines[index] = line.substring(1).trim();
+                            node.content = lines.join('\n');
+                            renderLines();
+                        }
+                    };
+                    content.appendChild(div);
+                });
+            };
+            renderLines();
+            
+            document.getElementById('editor-save').onclick = () => {
+                node.content = lines.join('\n');
+                editor.style.display = 'none';
+                print(`Saved ${path}`);
+            };
+            
+            document.getElementById('editor-exit').onclick = () => {
+                editor.style.display = 'none';
+            };
+        };
+
+        const handleEditor = (args) => {
+            const path = args[0];
+            if (!path) {
+                print("micro: no file specified");
+                return;
+            }
+            const node = getNode(path);
+            if (!node || node.type !== "f") {
+                print(`Error opening ${path}`);
+                return;
+            }
+            if (path === "/etc/pacman.conf" || path.includes("pacman.conf")) {
+                openEditor(node, path);
+            } else {
+                print("File is read-only or not supported in editor.");
+            }
+        };
+
+        const handleSudo = (args, rawCmd) => {
+            if (args[0] === "pacman" && args.includes("-Sy") && args.includes("core-sync")) {
+                if (VirtualKernel.powerState !== "INSTALLED_SHELL") {
+                    print("sudo: command not found");
+                    return;
+                }
+                const pacmanNode = getNode("/etc/pacman.conf");
+                if (!pacmanNode.content.includes("[core-sync-repo]") || pacmanNode.content.includes("#[core-sync-repo]") || pacmanNode.content.includes("#Server = https://secure.network.local/endpoint")) {
+                    print("error: failed to prepare transaction (invalid package database)");
+                    print("core-sync-repo is not fully configured in /etc/pacman.conf");
+                    return;
+                }
+                
+                print("[sudo] password for rank1: ");
+                VirtualKernel.powerState = "STAGE3_PACMAN";
+                printInstruction();
+            } else {
+                print("sudo: command not found or invalid args");
+            }
+        };
+
+        const handlePacman = (cmd) => {
+            if (cmd === "4") {
+                print(":: Synchronizing package databases...");
+                print(" core is up to date");
+                print(" extra is up to date");
+                print(" core-sync-repo        1024.0 B   100K/s 00:00 [#################] 100%");
+                print("resolving dependencies...");
+                print("looking for conflicting packages...");
+                print("");
+                print("Packages (1) core-sync-1.0.0-1");
+                print("");
+                print("Total Installed Size:  1.2 MiB");
+                print("");
+                print(":: Proceed with installation? [Y/n] y");
+                print("(1/1) Checking keys in keyring                 [#################] 100%");
+                print("(1/1) Checking integrity                       [#################] 100%");
+                print("(1/1) Loading package files                    [#################] 100%");
+                print("(1/1) Installing core-sync                     [#################] 100%");
+                print(":: Running post-transaction hooks...");
+                print("[+] Re-establishing secure handshake link...");
+                print("[+] Boot complete. System integrity restored.");
+                
+                setTimeout(() => {
+                    print("Redirecting to secure endpoint...");
+                    print("SIMULATION COMPLETE. SYSTEM SECURE.");
+                    document.getElementById('input-line').style.display = 'none';
+                }, 1500);
+            } else {
+                print("Sorry, try again.");
+                print("[sudo] password for rank1: ");
+            }
+        };
+
+        const processCommand = (input) => {
+            const cmd = input.trim();
+            if (!cmd) return;
+
+            print(`${getPrompt()}${cmd}`);
+
+            if (VirtualKernel.powerState === "STAGE1_INPUT") {
+                if (cmd === "4") {
+                    print("Access Granted.");
+                    startStage2();
+                } else {
+                    print("Incorrect password. >:(");
+                }
+                return;
+            }
+
+            if (VirtualKernel.powerState === "STAGE2_SELECT") {
+                if (cmd === "1") {
+                    startArchInstall();
+                } else if (cmd === "2") {
+                    print("Loading GUI Setup...");
+                    print("FATAL: Display driver dump. Rebooting...");
+                    print("Nyo Nyo being a chuwd bwe a gwood bwoy ^w^");
+                    setTimeout(() => location.reload(), 5000);
+                } else {
+                    print("Invalid option.");
+                }
+                return;
+            }
+
+            if (VirtualKernel.powerState === "STAGE3_LOGIN") {
+                handleLogin(cmd);
+                return;
+            }
+            
+            if (VirtualKernel.powerState === "STAGE3_PASSWORD") {
+                handlePassword(cmd);
+                return;
+            }
+
+            if (VirtualKernel.powerState === "STAGE3_PACMAN") {
+                handlePacman(cmd);
+                return;
+            }
+
+            const parts = cmd.split(/\s+/);
+            const baseCmd = parts[0];
+            const args = parts.slice(1);
+
+            switch(baseCmd) {
+                case 'help':
+                case 'hint':
+                    printHint();
+                    break;
+                case 'clear':
+                    document.getElementById('output').innerHTML = '';
+                    break;
+                case 'ping':
+                    handlePing(args);
+                    break;
+                case 'mkfs.ext4':
+                case 'mkfs.vfat':
+                case 'mkfs.fat':
+                    handleMkfs(args);
+                    break;
+                case 'mount':
+                    handleMount(args);
+                    break;
+                case 'pacstrap':
+                    handlePacstrap(args);
+                    break;
+                case 'genfstab':
+                    handleGenfstab(args);
+                    break;
+                case 'arch-chroot':
+                    handleChroot(args);
+                    break;
+                case 'ln':
+                    handleLn(args);
+                    break;
+                case 'echo':
+                    handleEcho(args, cmd);
+                    break;
+                case 'grub-install':
+                    handleGrubInstall(args);
+                    break;
+                case 'grub-mkconfig':
+                    handleGrubMkconfig(args);
+                    break;
+                case 'exit':
+                    handleExit();
+                    break;
+                case 'reboot':
+                    handleReboot();
+                    break;
+                case 'ls':
+                    handleLs(args);
+                    break;
+                case 'cd':
+                    handleCd(args);
+                    break;
+                case 'cat':
+                    handleCat(args);
+                    break;
+                case 'micro':
+                case 'nano':
+                    handleEditor(args);
+                    break;
+                case 'sudo':
+                    handleSudo(args, cmd);
+                    break;
+                case 'lsblk':
+                case 'fdisk':
+                    print("NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT");
+                    print("sda      8:0    0   20G  0 disk ");
+                    print("├─sda1   8:1    0  512M  0 part " + (VirtualKernel.mounts["/mnt/boot"] === "/dev/sda1" ? "/mnt/boot" : ""));
+                    print("└─sda2   8:2    0 19.5G  0 part " + (VirtualKernel.mounts["/mnt"] === "/dev/sda2" ? "/mnt" : ""));
+                    break;
+                default:
+                    print(`${baseCmd}: oh no! you make a fuckuo buingo! Uwu`);
+            }
+        };
+
+        window.onload = () => {
+            initFS();
+            startStage1();
+            updatePrompt();
+            
+            const input = document.getElementById('command-input');
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    const val = input.value;
+                    input.value = '';
+                    processCommand(val);
+                    updatePrompt();
+                    const output = document.getElementById('output');
+                    output.scrollTop = output.scrollHeight;
+                }
+            });
+            
+            document.body.addEventListener('click', () => {
+                if (document.getElementById('editor').style.display !== 'flex') {
+                    input.focus();
+                }
+            });
+        };
+    </script>
+</body>
+</html>
