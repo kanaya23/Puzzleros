@@ -187,6 +187,7 @@
             },
             mathSeries: [],
             mathAnswer: 4,
+            _secretAppInstalled: false,
             bootFlags: {
                 grubInstalled: false,
                 grubConfigured: false,
@@ -279,6 +280,7 @@
 
         let _captureBuf = null;
         let _stdinData = "";
+        const EPILOGUE_REPOS = ["base-devel", "linux-headers", "git", "curl", "neofetch", "htop", "sl", "cmatrix", "cowsay", "lolcat"];
         const print = (text) => {
             if (_captureBuf) { _captureBuf.push(text); return; }
             const output = document.getElementById('output');
@@ -393,7 +395,11 @@
                 const dir = VirtualKernel.currentDirectory.replace('/home/jew', '~');
                 return `[jew@arch-jew ${dir}]$ `;
             }
-            return "C:\\>";
+            if (VirtualKernel.powerState === "EPILOGUE") {
+                const dir = VirtualKernel.currentDirectory.replace('/home/jew', '~');
+                return `[user@debian ${dir}]$ `;
+            }
+            return "C:\>";
         };
 
         const updatePrompt = () => {
@@ -617,6 +623,7 @@
             dmesg: "dmesg  —  Print kernel ring buffer",
             nohup: "nohup <command>  —  Run immune to hangups",
             nice: "nice|renice <command>  —  Run with adjusted priority",
+            "secret-app": "secret-app  —  Run the secret reward application",
         };
 
         const printHelp = (cmd) => {
@@ -686,6 +693,9 @@
                 print("Hint: The password is 4 (the variance answer from Stage 1)." + (addUwu() ? uwuFillin() : ""));
             } else if (VirtualKernel.powerState === "STAGE3_PACMAN") {
                 print("Hint: The password is 4 (the variance answer from Stage 1). Type it and press Enter." + (addUwu() ? uwuFillin() : ""));
+            } else if (VirtualKernel.powerState === "EPILOGUE") {
+                print("Hint: Check what files exist with `ls`. Read `cat next.txt` for instructions." + (addUwu() ? uwuFillin() : ""));
+                print("You'll need to `sudo apt install <package>` to proceed." + (addUwu() ? uwuFillin() : ""));
             }
         };
 
@@ -736,6 +746,8 @@
                 print("[Instruction]: Review local system documentation to configure the secure network repository." + u());
             } else if (VirtualKernel.powerState === "STAGE3_PACMAN") {
                 print("[Instruction]: Authenticate superuser privileges to finalize the package synchronization." + u());
+            } else if (VirtualKernel.powerState === "EPILOGUE") {
+                print("[Instruction]: Check local files for next steps. Try `ls` and `cat next.txt`" + u());
             }
         };
 
@@ -1250,6 +1262,36 @@
                 print("[sudo] password for jew: ");
                 VirtualKernel.powerState = "STAGE3_PACMAN";
                 printInstruction();
+            } else if (args[0] === "apt" && args[1] === "install" && VirtualKernel.powerState === "EPILOGUE") {
+                const pkg = args[2];
+                if (!pkg || !EPILOGUE_REPOS.includes(pkg)) {
+                    print("E: Unable to locate package " + (pkg || ""));
+                    return;
+                }
+                print("Reading package lists... Done");
+                print("Building dependency tree... Done");
+                print("Reading state information... Done");
+                print("");
+                print("The following NEW packages will be installed:");
+                print("  " + pkg);
+                print("");
+                print("0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.");
+                print("Need to get 12.4 MB of archives.");
+                print("After this operation, 42.3 MB of additional disk space will be used.");
+                print("Do you want to continue? [Y/n] y");
+                print("");
+                print("Get:1 http://deb.debian.org/debian bookworm/main amd64 " + pkg + " amd64 1.0.0-1 [12.4 MB]");
+                print("Fetched 12.4 MB in 2s (6.2 MB/s)");
+                print("Selecting previously unselected package " + pkg + ".");
+                print("(Reading database ... 214567 files and directories currently installed.)");
+                print("Preparing to unpack .../" + pkg + "_1.0.0-1_amd64.deb ...");
+                print("Unpacking " + pkg + " (1.0.0-1) ...");
+                print("Setting up " + pkg + " (1.0.0-1) ...");
+                print("");
+                VirtualKernel._secretAppInstalled = true;
+                print("SECRET-APP has been installed successfully!");
+                print("Run 'secret-app' to claim your reward." + (addUwu() ? uwuFillin() : ""));
+                saveState();
             } else {
                 print("sudo: command not found or invalid args");
             }
@@ -1279,9 +1321,23 @@
             setTimeout(() => {
                 print("Redirecting to secure endpoint...");
                 print("SIMULATION COMPLETE. SYSTEM SECURE.");
-                document.getElementById('input-line').style.display = 'none';
-                clearSave();
+                transitionToEpilogue();
             }, 1500);
+        };
+
+        const transitionToEpilogue = () => {
+            VirtualKernel.powerState = "EPILOGUE";
+            const pick = EPILOGUE_REPOS[Math.floor(Math.random() * EPILOGUE_REPOS.length)];
+            VirtualKernel.fileSystem["/"].children.home.children.jew.children["next.txt"] = {
+                type: "f",
+                content: "CONGRATULATIONS! You have completed the Arch Linux installation.\n\n"
+                    + "To claim your final reward, install the following package using apt:\n"
+                    + "    sudo apt install " + pick + "\n\n"
+                    + "Once installed, run 'secret-app' to receive your prize."
+            };
+            print(""); print("--- Booting into Debian environment ---");
+            print(""); printInstruction();
+            saveState();
         };
 
         const handleRm = async (args) => {
@@ -1792,7 +1848,7 @@
                 VirtualKernel.bootFlags.coreSyncDone = true;
                 print("");
                 print("SIMULATION COMPLETE. SYSTEM SECURE.");
-                saveState();
+                transitionToEpilogue();
                 return;
             }
             if (args.includes("-S") || args.includes("-Sy") || args.includes("-Syu")) {
@@ -2112,6 +2168,23 @@
                     break;
                 case 'hint':
                     printHint();
+                    break;
+                case 'secret-app':
+                    if (!VirtualKernel._secretAppInstalled) {
+                        print("secret-app: command not found");
+                        break;
+                    }
+                    print("__________________________________________________");
+                    print("<   CONGWATULATION ONW FWINWISHING THW PWUZZLE   >");
+                    print("<               I TWHINK                        >");
+                    print("<   HERE IS YOUR CONSENSUS:                     >");
+                    print("<         install instagram!                    >");
+                    print("--------------------------------------------------");
+                    print("        \\   ^__^");
+                    print("         \\  (oo)\\_______");
+                    print("            (__)\\       )\\/\\");
+                    print("                ||----w |");
+                    print("                ||     ||");
                     break;
                 case 'clear':
                     document.getElementById('output').innerHTML = '';
@@ -2622,7 +2695,8 @@
                 return;
             }
 
-            await runCmd(baseCmd, args, cmd);
+            const pParts = cmd.split(/\s+/);
+            await runCmd(pParts[0], pParts.slice(1), cmd);
         };
 
         window.onload = () => {
