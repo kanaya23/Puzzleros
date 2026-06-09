@@ -243,6 +243,8 @@
             try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
         };
 
+        const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
         const print = (text) => {
             const output = document.getElementById('output');
             const line = document.createElement('div');
@@ -251,6 +253,26 @@
             requestAnimationFrame(() => {
                 output.scrollTop = output.scrollHeight;
             });
+        };
+
+        const updateLastLine = (text) => {
+            const output = document.getElementById('output');
+            const last = output.lastElementChild;
+            if (last) last.textContent = text;
+            requestAnimationFrame(() => {
+                output.scrollTop = output.scrollHeight;
+            });
+        };
+
+        const showProgress = async (prefix, steps, interval) => {
+            const barLen = 20;
+            for (let i = 1; i <= steps; i++) {
+                const pct = Math.round(i / steps * 100);
+                const filled = Math.round(i / steps * barLen);
+                const bar = '█'.repeat(filled) + '░'.repeat(barLen - filled);
+                updateLastLine(`${prefix} [${bar}] ${pct}%`);
+                await delay(interval);
+            }
         };
 
         const resolvePath = (path) => {
@@ -358,17 +380,23 @@
             printInstruction();
         };
 
-        const startStage3Boot = () => {
+        const startStage3Boot = async () => {
             // Remap installed system files to root
             const mntChildren = VirtualKernel.fileSystem["/"].children["mnt"].children;
             Object.assign(VirtualKernel.fileSystem["/"].children, mntChildren);
 
             print(":: Arch Linux 6.7.arch1-1 (TTY1)");
+            await delay(400);
             print("[  OK  ] Started Journal Service.");
+            await delay(300);
             print("[  OK  ] Started udev Coldplug Service.");
+            await delay(250);
             print("[  OK  ] Created Slice User Slices.");
+            await delay(300);
             print("[  OK  ] Started Accounts Service.");
+            await delay(400);
             print("[  OK  ] Reached target Multi-User System.");
+            await delay(500);
             print("");
             VirtualKernel.powerState = "STAGE3_LOGIN";
             printInstruction();
@@ -486,7 +514,7 @@
             }
         };
 
-        const handlePing = (args) => {
+        const handlePing = async (args) => {
             const target = args.filter(a => !a.startsWith("-") && !/^\d+$/.test(a))[0];
             if (!target) {
                 print("ping: usage error: missing host operand");
@@ -494,9 +522,11 @@
             }
             if (target === "archlinux.org" || target === "8.8.8.8" || target === "google.com") {
                 print(`PING ${target} (95.217.163.246) 56(84) bytes of data.`);
-                print("64 bytes from 95.217.163.246: icmp_seq=1 ttl=56 time=12.3 ms");
-                print("64 bytes from 95.217.163.246: icmp_seq=2 ttl=56 time=11.8 ms");
-                print("64 bytes from 95.217.163.246: icmp_seq=3 ttl=56 time=12.1 ms");
+                for (let i = 1; i <= 3; i++) {
+                    await delay(600 + Math.random() * 200);
+                    print(`64 bytes from 95.217.163.246: icmp_seq=${i} ttl=56 time=${(11 + Math.random() * 2).toFixed(1)} ms`);
+                }
+                await delay(200);
                 print("");
                 print(`--- ${target} ping statistics ---`);
                 print("3 packets transmitted, 3 received, 0% packet loss, time 2003ms");
@@ -507,25 +537,35 @@
             }
         };
 
-        const handleMkfs = (args) => {
+        const handleMkfs = async (args) => {
             if (args.includes("/dev/sda2")) {
                 print("mke2fs 1.47.0 (5-Feb-2023)");
                 print("Creating filesystem with 5111808 4k blocks and 1278240 inodes");
+                await delay(400);
                 print("Filesystem UUID: 12345678-1234-1234-1234-1234567890ab");
+                await showProgress("Allocating group tables", 10, 80);
                 print("Allocating group tables: done");
+                await showProgress("Writing inode tables", 15, 60);
                 print("Writing inode tables: done");
+                await showProgress("Creating journal (32768 blocks)", 8, 70);
                 print("Creating journal (32768 blocks): done");
+                await delay(200);
                 print("Writing superblocks and filesystem accounting information: done");
                 VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].formatted = true;
                 VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].type = "ext4";
                 printInstruction();
             } else if (args.includes("/dev/sda1")) {
                 print("mkfs.fat 4.2 (2021-01-31)");
+                await delay(200);
                 print("SHA-256: 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
                 print("Creating filesystem with 524288 1k blocks and 0 inodes");
+                await delay(300);
                 print("Filesystem UUID: 09876543-2109-8765-4321-0987654321ab");
+                await showProgress("Allocating group tables", 6, 60);
                 print("Allocating group tables: done");
+                await showProgress("Writing inode tables", 8, 50);
                 print("Writing inode tables: done");
+                await delay(200);
                 print("Writing superblocks and filesystem accounting information: done");
                 VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].formatted = true;
                 VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].type = "vfat";
@@ -560,7 +600,7 @@
             }
         };
 
-        const handlePacstrap = (args) => {
+        const handlePacstrap = async (args) => {
             if (!args.includes("-K")) {
                 print("pacstrap: missing required option '-K' for keyring initialization");
                 return;
@@ -572,15 +612,34 @@
                 }
                 print("==> Creating install root at /mnt");
                 print("==> Installing packages to /mnt");
+                await delay(600);
                 print(":: Synchronizing package databases...");
+                await showProgress(" core", 15, 80);
+                print(":: core is up to date");
+                await showProgress(" extra", 12, 70);
+                print(":: extra is up to date");
+                await delay(300);
                 print(":: Installing packages to /mnt...");
+                await delay(400);
                 print("resolving dependencies...");
+                await delay(500);
                 print("looking for conflicting packages...");
+                await delay(300);
                 print("");
                 print("Packages (5) base-3-2  linux-6.7.arch1-1  linux-firmware-20240115.911c6e3-1 ...");
+                await delay(400);
                 print(":: Proceed with installation? [Y/n] y");
+                await delay(200);
                 print(":: Retrieving packages...");
+                await showProgress(" linux      6.7.arch1-1", 20, 100);
+                print(" linux      6.7.arch1-1   94.2 MiB  12.3M/s 00:08 [##########] 100%");
+                await showProgress(" linux-firmware  20240115.911c6e3-1", 25, 90);
+                print(" linux-firmware  20240115.911c6e3-1  512.0 MiB  45.2M/s 00:11 [##########] 100%");
+                await showProgress(" base      3-2", 10, 70);
+                print(" base      3-2   12.5 MiB  18.7M/s 00:01 [##########] 100%");
+                await delay(300);
                 print(":: Processing package changes...");
+                await showProgress("Installing", 12, 120);
                 
                 VirtualKernel.fileSystem["/"].children["mnt"].children["usr"] = { type: "d", children: { "bin": { type: "d", children: { "bash": { type: "f" } } } } };
                 VirtualKernel.fileSystem["/"].children["mnt"].children["etc"] = { type: "d", children: {
@@ -682,7 +741,7 @@
             }
         };
 
-        const handleGrubInstall = (args) => {
+        const handleGrubInstall = async (args) => {
             if (args.includes("/dev/sda")) {
                 if (!VirtualKernel.isChrooted) {
                     print("grub-install: error: /dev/sda is not accessible");
@@ -694,6 +753,7 @@
                         return;
                     }
                     print("Installing for x86_64-efi platform.");
+                    await showProgress("Installing GRUB", 15, 100);
                     print("Installation finished. No error reported.");
                 } else {
                     if (args.includes("--target=x86_64-efi")) {
@@ -701,6 +761,7 @@
                         return;
                     }
                     print("Installing for i386-pc platform.");
+                    await showProgress("Installing GRUB", 12, 100);
                     print("Installation finished. No error reported.");
                 }
                 VirtualKernel.bootFlags.grubInstalled = true;
@@ -710,15 +771,18 @@
             }
         };
 
-        const handleGrubMkconfig = (args) => {
+        const handleGrubMkconfig = async (args) => {
             if (args.includes("-o") && args.includes("/boot/grub/grub.cfg")) {
                 if (!VirtualKernel.isChrooted) {
                     print("grub-mkconfig: permission denied");
                     return;
                 }
                 print("Generating grub configuration file ...");
+                await showProgress("Searching for kernels", 10, 90);
                 print("Found linux image: /boot/vmlinuz-linux");
+                await delay(300);
                 print("Found initrd image: /boot/initramfs-linux.img");
+                await delay(200);
                 print("done");
                 VirtualKernel.bootFlags.grubConfigured = true;
                 const node = getNode("/boot/grub/grub.cfg");
@@ -758,7 +822,7 @@
             }
         };
 
-        const handleReboot = () => {
+        const handleReboot = async () => {
             if (VirtualKernel.isChrooted) {
                 print("reboot: must be superuser");
                 return;
@@ -769,9 +833,11 @@
                 return;
             }
             print("System is going down for reboot NOW!");
+            await delay(600);
             print("reboot: Restarting system");
             VirtualKernel.powerState = "INSTALLED_BOOT";
-            setTimeout(startStage3Boot, 1500);
+            await delay(800);
+            startStage3Boot();
         };
 
         const handleLogin = (cmd) => {
@@ -982,7 +1048,7 @@
             }
         };
 
-        const processCommand = (input) => {
+        const processCommand = async (input) => {
             const cmd = input.trim();
             if (!cmd) return;
 
@@ -1056,18 +1122,18 @@
                     }
                     break;
                 case 'ping':
-                    handlePing(args);
+                    await handlePing(args);
                     break;
                 case 'mkfs.ext4':
                 case 'mkfs.vfat':
                 case 'mkfs.fat':
-                    handleMkfs(args);
+                    await handleMkfs(args);
                     break;
                 case 'mount':
                     handleMount(args);
                     break;
                 case 'pacstrap':
-                    handlePacstrap(args);
+                    await handlePacstrap(args);
                     break;
                 case 'genfstab':
                     handleGenfstab(args);
@@ -1082,16 +1148,16 @@
                     handleEcho(args, cmd);
                     break;
                 case 'grub-install':
-                    handleGrubInstall(args);
+                    await handleGrubInstall(args);
                     break;
                 case 'grub-mkconfig':
-                    handleGrubMkconfig(args);
+                    await handleGrubMkconfig(args);
                     break;
                 case 'exit':
                     handleExit();
                     break;
                 case 'reboot':
-                    handleReboot();
+                    await handleReboot();
                     break;
                 case 'ls':
                     handleLs(args);
@@ -1136,11 +1202,11 @@
                 printInstruction();
             }
             
-            input.addEventListener('keydown', (e) => {
+            input.addEventListener('keydown', async (e) => {
                 if (e.key === 'Enter') {
                     const val = input.value;
                     input.value = '';
-                    processCommand(val);
+                    await processCommand(val);
                     updatePrompt();
                     const output = document.getElementById('output');
                     output.scrollTop = output.scrollHeight;
