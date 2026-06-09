@@ -1,0 +1,12 @@
+── MAP SUMMARY ───────────────────────────────────────────────────────────
+- Project: Puzzleros
+- Files: 3 | 144.1 KB raw | ~149003 chars | ~37251 tokens
+- Mode: tree
+
+──────────────────────────────────────────────────────────────────────────
+
+/Puzzleros
+  HTML Document.html
+  os-sim.html
+  plan.md
+

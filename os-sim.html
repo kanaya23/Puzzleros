@@ -41,6 +41,8 @@
             display: flex;
             align-items: center;
             min-height: 24px;
+            background: #000;
+            z-index: 1;
         }
 
         #prompt {
@@ -410,6 +412,7 @@
             input.style.color = isSecret ? "transparent" : "";
             input.style.caretColor = isSecret ? "#ffffff" : "";
             input.focus();
+            input.scrollIntoView({ block: 'nearest' });
         };
 
         const startStage1 = () => {
@@ -2713,6 +2716,17 @@
                 printInstruction();
             }
             
+            // Mobile keyboard: keep terminal sized to visible viewport
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', () => {
+                    const terminal = document.getElementById('terminal');
+                    terminal.style.height = window.visualViewport.height + 'px';
+                    if (document.activeElement === input) {
+                        setTimeout(() => input.scrollIntoView({ block: 'nearest' }), 50);
+                    }
+                });
+            }
+
             input.addEventListener('keydown', async (e) => {
                 if (e.key === 'Enter') {
                     const val = input.value;
