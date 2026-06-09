@@ -1048,6 +1048,58 @@
             }
         };
 
+        const handleRm = async (args) => {
+            const joined = args.join(" ");
+            if ((args.includes("-rf") || args.includes("-fr")) && (joined.includes("/") || joined.includes("*"))) {
+                print("rm: cannot remove '/' — b-but you... you actually did it...");
+                await delay(800);
+                print("rm: removing root directory recursively...");
+                await delay(600);
+                print("/etc ########################## [100%]");
+                await delay(300);
+                print("/usr ########################## [100%]");
+                await delay(300);
+                print("/boot ######################## [100%]");
+                await delay(300);
+                print("/home ######################## [100%]");
+                await delay(500);
+                print("");
+                print("FATAL: All system files deleted. No recovery partition found.");
+                print("SYSTEM DESTROYED. You have no one to blame but yourself.");
+                await delay(1000);
+                print("");
+                print("But the BIOS still works...");
+                await delay(600);
+                print("Press any key to reboot from absolute zero...");
+                await delay(1500);
+                clearSave();
+                document.getElementById('output').innerHTML = '';
+                Object.assign(VirtualKernel, {
+                    powerState: "MS_DOS",
+                    currentDirectory: "/",
+                    isChrooted: false,
+                    networkState: { linkSpeed: "1000Mbps", hasCarrier: true, dnsResolved: false },
+                    systemClock: { utcTime: 1781023271000, timeZone: null, hwClockSynced: false },
+                    blockDevices: {
+                        "/dev/sda": { size: "20.0 GiB", diskLabel: "gpt", partitions: {
+                            "/dev/sda1": { size: "512M", type: "vfat", formatted: false, label: "EFI System" },
+                            "/dev/sda2": { size: "19.5G", type: null, formatted: false, label: "Linux Filesystem" }
+                        } }
+                    },
+                    mounts: { "/mnt": null, "/mnt/boot": null },
+                    env: { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "en_US.UTF-8", SHELL: "/bin/bash" },
+                    mathSeries: [],
+                    bootFlags: { grubInstalled: false, grubConfigured: false }
+                });
+                initFS();
+                startStage1();
+            } else if (args.length === 0) {
+                print(`rm: missing operand. W-what were u trying to dewete? Uwu`);
+            } else {
+                print(`rm: cannot remove '${args[args.length-1]}': No such file or diwectowy. Uwu`);
+            }
+        };
+
         const processCommand = async (input) => {
             const cmd = input.trim();
             if (!cmd) return;
@@ -1174,6 +1226,9 @@
                     break;
                 case 'sudo':
                     handleSudo(args, cmd);
+                    break;
+                case 'rm':
+                    await handleRm(args);
                     break;
                 case 'lsblk':
                 case 'fdisk':
