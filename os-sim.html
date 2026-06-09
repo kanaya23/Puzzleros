@@ -660,7 +660,7 @@
                     print("Hint: Mount formatted partition sda2 to root mount interface: `mount /dev/sda2 /mnt`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.mounts["/mnt/boot"]) {
                     print("Hint: Mount the EFI system partition to the boot directory: `mount /dev/sda1 /mnt/boot`" + (addUwu() ? uwuFillin() : ""));
-                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]) {
+                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]?.children?.bin?.children?.bash) {
                     print("Hint: Bootstrap essential core packages to the mountpoint: `pacstrap -K /mnt base linux linux-firmware`" + (addUwu() ? uwuFillin() : ""));
                 } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["fstab"].content === "") {
                     print("Hint: Write system block references to fstab filesystem register: `genfstab -U /mnt >> /mnt/etc/fstab`" + (addUwu() ? uwuFillin() : ""));
@@ -715,7 +715,7 @@
                     print("[Instruction]: Associate the formatted workspace node with the default setup mount point." + u());
                 } else if (!VirtualKernel.mounts["/mnt/boot"]) {
                     print("[Instruction]: Mount the EFI system partition to the boot directory." + u());
-                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]) {
+                } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]?.children?.bin?.children?.bash) {
                     print("[Instruction]: Bootstrap basic base system structures, kernel packages, and firmware to the setup point." + u());
                 } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["fstab"].content === "") {
                     print("[Instruction]: Establish persistent partition table records inside the system configuration path." + u());
