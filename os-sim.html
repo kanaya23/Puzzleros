@@ -360,7 +360,7 @@
         };
 
         const startStage2 = () => {
-            print("Access Granted. Loading OS_SELECT.COM...");
+            print("Access Gwanted" + (addUwu() ? " UwU" : "") + ". Loading OS_SELECT.COM...");
             print("");
             print("Select a Linux distribution to install:");
             print("1. Arch Linux (Manual Bootstrap)");
@@ -371,11 +371,11 @@
         };
 
         const startArchInstall = () => {
-            print("Shifting execution context...");
+            print("Shifting execution context" + (addUwu() ? " (teehee~)" : "") + "...");
             print("Scanning x86 hardware...");
             print("Loading live ISO installation environment...");
             print("");
-            print("Tip: Type 'hint' at any prompt to view exact commands and explanations.");
+            print("Tip: Type 'hint' at any prompt to view exact commands and explanations." + (addUwu() ? " (>w<)" : ""));
             VirtualKernel.powerState = "LIVE_ISO";
             printInstruction();
         };
@@ -409,108 +409,115 @@
                 " (heehee :3)",
                 " (owo)",
                 " (rawr x3)",
+                " (p-pwease be caweful... UwU)",
+                " (u got this, fwiend! >w<)",
+                " (teehee ~)",
+                " (nya~ ^,..,^)",
+                " (U w U)",
             ];
             return fillers[Math.floor(Math.random() * fillers.length)];
         };
 
+        const addUwu = () => Math.random() < 0.25;
+
         const printHint = () => {
-            const addUwu = Math.random() < 0.25;
             if (VirtualKernel.powerState === "STAGE1_INPUT") {
                 print("Hint: The variance of any 7 consecutive integers is constant.");
-                print("Calculate the population variance (Nilai Ragam) of the series.");
+                print("Calculate the population variance (Nilai Ragam) of the series." + (addUwu() ? uwuFillin() : ""));
             } else if (VirtualKernel.powerState === "LIVE_ISO") {
                 if (!VirtualKernel.networkState.dnsResolved) {
-                    print("Hint: Verify remote host packet response: `ping -c 3 archlinux.org`" + (addUwu ? uwuFillin() : ""));
+                    print("Hint: Verify remote host packet response: `ping -c 3 archlinux.org`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].formatted) {
-                    print("Hint: Initialize raw block /dev/sda2 to system-standard ext4 formatting: `mkfs.ext4 /dev/sda2`");
+                    print("Hint: Initialize raw block /dev/sda2 to system-standard ext4 formatting: `mkfs.ext4 /dev/sda2`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].formatted) {
-                    print("Hint: Initialize the EFI system partition with FAT32: `mkfs.vfat /dev/sda1`" + (addUwu ? uwuFillin() : ""));
+                    print("Hint: Initialize the EFI system partition with FAT32: `mkfs.vfat /dev/sda1`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.mounts["/mnt"]) {
-                    print("Hint: Mount formatted partition sda2 to root mount interface: `mount /dev/sda2 /mnt`");
+                    print("Hint: Mount formatted partition sda2 to root mount interface: `mount /dev/sda2 /mnt`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.mounts["/mnt/boot"]) {
-                    print("Hint: Mount the EFI system partition to the boot directory: `mount /dev/sda1 /mnt/boot`" + (addUwu ? uwuFillin() : ""));
+                    print("Hint: Mount the EFI system partition to the boot directory: `mount /dev/sda1 /mnt/boot`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]) {
-                    print("Hint: Bootstrap essential core packages to the mountpoint: `pacstrap -K /mnt base linux linux-firmware`");
+                    print("Hint: Bootstrap essential core packages to the mountpoint: `pacstrap -K /mnt base linux linux-firmware`" + (addUwu() ? uwuFillin() : ""));
                 } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["fstab"].content === "") {
-                    print("Hint: Write system block references to fstab filesystem register: `genfstab -U /mnt >> /mnt/etc/fstab`" + (addUwu ? uwuFillin() : ""));
+                    print("Hint: Write system block references to fstab filesystem register: `genfstab -U /mnt >> /mnt/etc/fstab`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.isChrooted) {
-                    print("Hint: Enter target partition chroot framework: `arch-chroot /mnt`");
+                    print("Hint: Enter target partition chroot framework: `arch-chroot /mnt`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["localtime"].target) {
-                    print("Hint: Build relative local clock pointer: `ln -sf /usr/share/zoneinfo/Asia/Jakarta /etc/localtime`" + (addUwu ? uwuFillin() : ""));
+                    print("Hint: Build relative local clock pointer: `ln -sf /usr/share/zoneinfo/Asia/Jakarta /etc/localtime`" + (addUwu() ? uwuFillin() : ""));
                 } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["hostname"].content === "") {
-                    print("Hint: Write machine network identity: `echo \"arch-jew\" > /etc/hostname`");
+                    print("Hint: Write machine network identity: `echo \"arch-jew\" > /etc/hostname`" + (addUwu() ? uwuFillin() : ""));
                 } else if (!VirtualKernel.bootFlags.grubInstalled) {
                     if (VirtualKernel.mounts["/mnt/boot"]) {
-                        print("Hint: Write EFI bootloader to the drive: `grub-install --target=x86_64-efi --efi-directory=/boot /dev/sda`");
+                        print("Hint: Write EFI bootloader to the drive: `grub-install --target=x86_64-efi --efi-directory=/boot /dev/sda`" + (addUwu() ? uwuFillin() : ""));
                     } else {
-                        print("Hint: Write partition bootloader blocks to sda: `grub-install /dev/sda`");
+                        print("Hint: Write partition bootloader blocks to sda: `grub-install /dev/sda`" + (addUwu() ? uwuFillin() : ""));
                     }
                 } else if (!VirtualKernel.bootFlags.grubConfigured) {
-                    print("Hint: Build GRUB config file: `grub-mkconfig -o /boot/grub/grub.cfg`");
+                    print("Hint: Build GRUB config file: `grub-mkconfig -o /boot/grub/grub.cfg`" + (addUwu() ? uwuFillin() : ""));
                 } else {
-                    print("Hint: Command chroot context termination: `exit`, then `reboot`");
+                    print("Hint: Command chroot context termination: `exit`, then `reboot`" + (addUwu() ? uwuFillin() : ""));
                 }
             } else if (VirtualKernel.powerState === "INSTALLED_SHELL") {
-                print("Hint: Type `cat README.txt` for instructions.");
+                print("Hint: Type `cat README.txt` for instructions." + (addUwu() ? uwuFillin() : ""));
                 print("Then `nano /etc/pacman.conf` to edit the config.");
                 print("In the editor, tap any line starting with # to uncomment it.");
                 print("Uncomment the [core-sync-repo] and Server lines, then save and exit.");
-                print("Finally run: `sudo pacman -Sy core-sync`");
+                print("Finally run: `sudo pacman -Sy core-sync`" + (addUwu() ? uwuFillin() : ""));
             } else if (VirtualKernel.powerState === "STAGE3_LOGIN") {
-                print("Hint: The authorized system user is `jew`. Enter the username to proceed.");
+                print("Hint: The authorized system user is `jew`. Enter the username to proceed." + (addUwu() ? uwuFillin() : ""));
             } else if (VirtualKernel.powerState === "STAGE3_PASSWORD") {
-                print("Hint: The password is 4 (the variance answer from Stage 1).");
+                print("Hint: The password is 4 (the variance answer from Stage 1)." + (addUwu() ? uwuFillin() : ""));
             } else if (VirtualKernel.powerState === "STAGE3_PACMAN") {
-                print("Hint: The password is 4 (the variance answer from Stage 1). Type it and press Enter.");
+                print("Hint: The password is 4 (the variance answer from Stage 1). Type it and press Enter." + (addUwu() ? uwuFillin() : ""));
             }
         };
 
         const printInstruction = () => {
+            const u = () => addUwu() ? " " + uwuFillin().trim() : "";
             print(""); // Visual spacer
             if (VirtualKernel.powerState === "STAGE1_INPUT") {
-                print("[Instruction]: Resolve the arithmetic :3 lock.");
+                print("[Instruction]: Resolve the arithmetic :3 lock." + u());
             } else if (VirtualKernel.powerState === "LIVE_ISO") {
                 if (!VirtualKernel.networkState.dnsResolved) {
-                    print("[Instruction]: Check the internet connection by pinging archlinux.org");
+                    print("[Instruction]: Check the internet connection by pinging archlinux.org" + u());
                 } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda2"].formatted) {
-                    print("[Instruction]: Format the secondary target partition of the system disk.");
+                    print("[Instruction]: Format the secondary target partition of the system disk." + u());
                 } else if (!VirtualKernel.blockDevices["/dev/sda"].partitions["/dev/sda1"].formatted) {
-                    print("[Instruction]: Format the EFI system partition with a FAT filesystem.");
+                    print("[Instruction]: Format the EFI system partition with a FAT filesystem." + u());
                 } else if (!VirtualKernel.mounts["/mnt"]) {
-                    print("[Instruction]: Associate the formatted workspace node with the default setup mount point.");
+                    print("[Instruction]: Associate the formatted workspace node with the default setup mount point." + u());
                 } else if (!VirtualKernel.mounts["/mnt/boot"]) {
-                    print("[Instruction]: Mount the EFI system partition to the boot directory.");
+                    print("[Instruction]: Mount the EFI system partition to the boot directory." + u());
                 } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["usr"]) {
-                    print("[Instruction]: Bootstrap basic base system structures, kernel packages, and firmware to the setup point.");
+                    print("[Instruction]: Bootstrap basic base system structures, kernel packages, and firmware to the setup point." + u());
                 } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["fstab"].content === "") {
-                    print("[Instruction]: Establish persistent partition table records inside the system configuration path.");
+                    print("[Instruction]: Establish persistent partition table records inside the system configuration path." + u());
                 } else if (VirtualKernel.bootFlags.grubConfigured && !VirtualKernel.isChrooted) {
-                    print("[Instruction]: Terminate active chroot process loops and reboot.");
+                    print("[Instruction]: Terminate active chroot process loops and reboot." + u());
                 } else if (!VirtualKernel.isChrooted) {
-                    print("[Instruction]: Pivot execution context into the target machine.");
+                    print("[Instruction]: Pivot execution context into the target machine." + u());
                 } else if (!VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["localtime"].target) {
-                    print("[Instruction]: Form timezone configuration pathways for local Jakarta region.");
+                    print("[Instruction]: Form timezone configuration pathways for local Jakarta region." + u());
                 } else if (VirtualKernel.fileSystem["/"].children["mnt"].children["etc"].children["hostname"].content === "") {
-                    print("[Instruction]: Define the system identifier as arch-jew.");
+                    print("[Instruction]: Define the system identifier as arch-jew." + u());
                 } else if (!VirtualKernel.bootFlags.grubInstalled) {
                     if (VirtualKernel.mounts["/mnt/boot"]) {
-                        print("[Instruction]: Install the UEFI bootloader to the system drive.");
+                        print("[Instruction]: Install the UEFI bootloader to the system drive." + u());
                     } else {
-                        print("[Instruction]: Install primary system load registers to the drive.");
+                        print("[Instruction]: Install primary system load registers to the drive." + u());
                     }
                 } else if (!VirtualKernel.bootFlags.grubConfigured) {
-                    print("[Instruction]: Build dynamic boot sequence configurations.");
+                    print("[Instruction]: Build dynamic boot sequence configurations." + u());
                 } else {
-                    print("[Instruction]: Terminate active chroot process loops and reboot.");
+                    print("[Instruction]: Terminate active chroot process loops and reboot." + u());
                 }
             } else if (VirtualKernel.powerState === "STAGE3_LOGIN") {
-                print("[Instruction]: Input authorized system user to proceed.");
+                print("[Instruction]: Input authorized system user to proceed." + u());
             } else if (VirtualKernel.powerState === "STAGE3_PASSWORD") {
-                print("[Instruction]: Provide the cryptographic key derived from the initial boot sequence.");
+                print("[Instruction]: Provide the cryptographic key derived from the initial boot sequence." + u());
             } else if (VirtualKernel.powerState === "INSTALLED_SHELL") {
-                print("[Instruction]: Review local system documentation to configure the secure network repository.");
+                print("[Instruction]: Review local system documentation to configure the secure network repository." + u());
             } else if (VirtualKernel.powerState === "STAGE3_PACMAN") {
-                print("[Instruction]: Authenticate superuser privileges to finalize the package synchronization.");
+                print("[Instruction]: Authenticate superuser privileges to finalize the package synchronization." + u());
             }
         };
 
@@ -829,12 +836,12 @@
             }
             if (!VirtualKernel.bootFlags.grubInstalled || !VirtualKernel.bootFlags.grubConfigured) {
                 print("Kernel panic - not syncing: VFS: Unable to mount root fs on unknown-block(0,0)");
-                print("Stwooop!!! Stwop nnngh~!!.");
+                print("Stwooop!!! Stwop nnngh~!!." + (addUwu() ? " >m<" : ""));
                 return;
             }
-            print("System is going down for reboot NOW!");
+            print("System is going down for reboot NOW!" + (addUwu() ? " (bai bai~ UwU)" : ""));
             await delay(600);
-            print("reboot: Restarting system");
+            print("reboot: Restarting system" + (addUwu() ? " nya~" : ""));
             VirtualKernel.powerState = "INSTALLED_BOOT";
             await delay(800);
             startStage3Boot();
@@ -1051,27 +1058,27 @@
         const handleRm = async (args) => {
             const joined = args.join(" ");
             if ((args.includes("-rf") || args.includes("-fr")) && (joined.includes("/") || joined.includes("*"))) {
-                print("rm: cannot remove '/' — b-but you... you actually did it...");
-                await delay(800);
-                print("rm: removing root directory recursively...");
+                print("rm: cannot wemove '/'... oh w-wait, it's happening...");
                 await delay(600);
+                print("rm: deweting evewything foweva >w< ...");
+                await delay(400);
                 print("/etc ########################## [100%]");
-                await delay(300);
+                await delay(200);
                 print("/usr ########################## [100%]");
-                await delay(300);
+                await delay(200);
                 print("/boot ######################## [100%]");
-                await delay(300);
+                await delay(200);
                 print("/home ######################## [100%]");
+                await delay(300);
+                print("");
+                print("oopsie whoopsie... u made a big fucky-wucky! :3");
+                print("the system files are all gone hehe~");
+                await delay(400);
+                print("");
+                print("nyo wowy tho! the BIOS is awways thewe fow u UwU");
                 await delay(500);
-                print("");
-                print("FATAL: All system files deleted. No recovery partition found.");
-                print("SYSTEM DESTROYED. You have no one to blame but yourself.");
+                print("wets stawt ovew fwom the vewy beginning... nya~!");
                 await delay(1000);
-                print("");
-                print("But the BIOS still works...");
-                await delay(600);
-                print("Press any key to reboot from absolute zero...");
-                await delay(1500);
                 clearSave();
                 document.getElementById('output').innerHTML = '';
                 Object.assign(VirtualKernel, {
@@ -1111,7 +1118,7 @@
 
             if (VirtualKernel.powerState === "STAGE1_INPUT") {
                 if (cmd === "4") {
-                    print("Access Granted.");
+                    print("Access Granted" + (addUwu() ? uwuFillin() : "") + ".");
                     startStage2();
                 } else {
                     const wrongs = [
@@ -1129,12 +1136,12 @@
                 if (cmd === "1") {
                     startArchInstall();
                 } else if (cmd === "2") {
-                    print("Loading GUI Setup...");
-                    print("FATAL: Display driver dump. Rebooting...");
+                    print("Loading GUI Setup..." + (addUwu() ? uwuFillin() : ""));
+                    print("FATAL: Display driver dump. Rebooting..." + (addUwu() ? uwuFillin() : ""));
                     print("Nyo Nyo being a chuwd bwe a gwood bwoy ^w^");
                     setTimeout(() => location.reload(), 5000);
                 } else {
-                    print("Invalid option.");
+                    print("Invalid option." + (addUwu() ? uwuFillin() : ""));
                 }
                 saveState();
                 return;
@@ -1252,7 +1259,7 @@
             } else {
                 updatePrompt();
                 if (VirtualKernel.powerState !== "STAGE3_PACMAN") {
-                    print("--- Session restored ---");
+                    print("--- Session westowed" + (addUwu() ? " :3" : "") + " ---");
                 }
                 printInstruction();
             }
