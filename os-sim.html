@@ -194,6 +194,37 @@
             }
         };
 
+        const systemState = {
+            kernel: {
+                hostname: "archiso",
+                uptimeBase: Date.now(),
+                version: "6.7.0-arch1-1",
+                arch: "x86_64",
+            },
+            services: {
+                "NetworkManager": { active: true, enabled: true, pid: 456 },
+                "sshd": { active: true, enabled: true, pid: 789 },
+                "dhcpcd": { active: false, enabled: false, pid: null },
+                "systemd-journald": { active: true, enabled: true, pid: 201 },
+                "systemd-udevd": { active: true, enabled: true, pid: 202 },
+            },
+            network: {
+                interfaces: {
+                    "lo": { state: "UP", mtu: 65536, mac: "00:00:00:00:00:00", inet4: "127.0.0.1/8", inet6: "::1/128" },
+                    "enp0s3": { state: "UP", mtu: 1500, mac: "08:00:27:ab:cd:ef", inet4: "10.0.2.15/24", inet6: "fe80::a00:27ff:feab:cdef/64" },
+                }
+            },
+            processes: {
+                nextPid: 446,
+                list: [
+                    { pid: 1, name: "init", user: "root", cpu: 0.0, mem: 0.0, state: "Ss", cmd: "init" },
+                    { pid: 201, name: "systemd-journald", user: "root", cpu: 0.0, mem: 0.1, state: "Ss", cmd: "/usr/lib/systemd/systemd-journald" },
+                    { pid: 202, name: "systemd-udevd", user: "root", cpu: 0.0, mem: 0.0, state: "Ss", cmd: "/usr/lib/systemd/systemd-udevd" },
+                    { pid: 445, name: "bash", user: "jew", cpu: 0.3, mem: 0.3, state: "S", cmd: "bash" },
+                ]
+            },
+        };
+
         const initFS = () => {
             VirtualKernel.fileSystem = {
                 "/": {
@@ -246,7 +277,10 @@
 
         const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
+        let _captureBuf = null;
+        let _stdinData = "";
         const print = (text) => {
+            if (_captureBuf) { _captureBuf.push(text); return; }
             const output = document.getElementById('output');
             const line = document.createElement('div');
             line.textContent = text;
@@ -448,6 +482,161 @@
         };
 
         const addUwu = () => Math.random() < 0.25;
+
+        // --- Pipe / capture helpers ---
+        const startCapture = () => { _captureBuf = []; };
+        const stopCapture = () => { const r = _captureBuf; _captureBuf = null; return r || []; };
+
+        // --- Expression sandbox ---
+        const safeEval = (expr) => {
+            const sanitized = expr.replace(/[^0-9+\-*/().%\s]/g, "");
+            if (sanitized !== expr) throw new Error("expr: syntax error");
+            return Function('"use strict"; return (' + sanitized + ')')();
+        };
+
+        // --- Help texts ---
+        const helpTexts = {
+            ping: "ping [-c count] <host>  —  Send ICMP echo requests",
+            ls: "ls [-l] [-a] [path]  —  List directory contents",
+            cd: "cd <path>  —  Change current directory",
+            cat: "cat <file>  —  Print file contents",
+            pwd: "pwd  —  Print working directory",
+            mkdir: "mkdir [-p] <dir>  —  Create directories",
+            touch: "touch <file>  —  Create empty file / update timestamp",
+            cp: "cp [-r] <src> <dst>  —  Copy files or directories",
+            mv: "mv <src> <dst>  —  Move/rename files",
+            rm: "rm [-rf] <path>  —  Remove files (use -rf / to reset)",
+            chmod: "chmod <mode> <file>  —  Change file permissions (e.g. 755, 644, +x)",
+            chown: "chown <user[:group]> <file>  —  Change file owner",
+            mount: "mount <device> <target>  —  Mount a filesystem",
+            umount: "umount <target>  —  Unmount a filesystem",
+            mkfs: "mkfs.ext4|mkfs.vfat|mkfs.fat <device>  —  Create filesystem",
+            pacstrap: "pacstrap -K /mnt base linux linux-firmware  —  Bootstrap Arch packages",
+            genfstab: "genfstab -U /mnt >> /mnt/etc/fstab  —  Generate fstab",
+            "arch-chroot": "arch-chroot /mnt  —  Chroot into installed system",
+            ln: "ln -sf <target> <link>  —  Create symbolic link",
+            echo: "echo <text> [> <file>]  —  Print text or write to file",
+            exit: "exit  —  Exit chroot (checks completeness)",
+            reboot: "reboot  —  Reboot system into installed OS",
+            grub: "grub-install --target=x86_64-efi --efi-directory=/boot /dev/sda  —  Install GRUB bootloader",
+            "grub-mkconfig": "grub-mkconfig -o /boot/grub/grub.cfg  —  Generate GRUB config",
+            nano: "nano|micro|vim|vi <file>  —  Open file editor",
+            sudo: "sudo <command>  —  Execute command as superuser",
+            clear: "clear  —  Clear terminal",
+            hint: "hint|help  —  Show context-sensitive hint",
+            help: "help [command]  —  Show command list or command help",
+            lsblk: "lsblk|fdisk  —  List block devices",
+            blkid: "blkid [device]  —  Show block device UUIDs",
+            findmnt: "findmnt  —  Show mount tree",
+            parted: "parted|gdisk  —  Partition manager (simulated)",
+            df: "df [-h]  —  Show disk free space",
+            du: "du [-sh] <path>  —  Show disk usage",
+            free: "free [-h]  —  Show memory usage",
+            dd: "dd if=<src> of=<dst> bs=<N> count=<N>  —  Copy data (simulated)",
+            ps: "ps [aux|ef]  —  Show process list",
+            top: "top  —  Show processes (snapshot)",
+            kill: "kill [-9] <pid>  —  Send signal to process",
+            killall: "killall <name>  —  Kill processes by name",
+            uname: "uname [-a] [-s] [-n] [-r] [-m]  —  Print system info",
+            arch: "arch  —  Print machine architecture",
+            uptime: "uptime  —  Show system uptime",
+            w: "w  —  Show who is logged on",
+            who: "who  —  Show logged-in users",
+            whoami: "whoami  —  Print current user",
+            id: "id [user]  —  Print user identity",
+            groups: "groups  —  Print group memberships",
+            logname: "logname  —  Print login name",
+            date: "date  —  Show/set date",
+            cal: "cal  —  Show calendar",
+            hostnamectl: "hostnamectl [set-hostname <name>]  —  Query/change hostname",
+            timedatectl: "timedatectl [set-ntp true|false]  —  Query/change time & date",
+            hwclock: "hwclock [--systohc] [--hctosys]  —  Hardware clock access",
+            "locale-gen": "locale-gen  —  Generate locales",
+            localectl: "localectl [set-locale LANG=<locale>]  —  Query/change locale",
+            passwd: "passwd [user]  —  Change password",
+            systemctl: "systemctl [enable|start|status] <service>  —  Systemd service control",
+            useradd: "useradd [-m] [-G <group>] <user>  —  Add user",
+            usermod: "usermod <options> <user>  —  Modify user",
+            mkinitcpio: "mkinitcpio -p <preset>  —  Generate initramfs",
+            pacman: "pacman [-S|-Sy|-Syu|-R|-Q|-Ss] <package>  —  Package manager",
+            reflector: "reflector  —  Update mirrorlist (simulated)",
+            ip: "ip [addr|link|route]  —  Show/manipulate networking",
+            iwctl: "iwctl station <dev> [scan|connect]  —  WiFi control",
+            dhcpcd: "dhcpcd [interface]  —  DHCP client",
+            curl: "curl <url>  —  HTTP request (simulated)",
+            wget: "wget <url>  —  Download file (simulated)",
+            nmcli: "nmcli dev wifi  —  NetworkManager CLI (simulated)",
+            tar: "tar [-xvf|-czvf] <archive> [files]  —  Archive utility",
+            gzip: "gzip|gunzip|zcat <file>  —  Compress/decompress",
+            xz: "xz|unxz|xzcat <file>  —  Compress/decompress",
+            grep: "grep [-i] <pattern> <file>  —  Search file content",
+            head: "head [-n <count>] <file>  —  Show first lines",
+            tail: "tail [-n <count>] <file>  —  Show last lines",
+            wc: "wc <file>  —  Count lines/words/characters",
+            sort: "sort <file>  —  Sort lines alphabetically",
+            uniq: "uniq <file>  —  Remove duplicate adjacent lines",
+            less: "less|more <file>  —  View file (simulated pager)",
+            sed: "sed [-i] 's/old/new/g' <file>  —  Stream editor",
+            awk: "awk <pattern> <file>  —  Text processor (simulated)",
+            cut: "cut <file>  —  Cut columns (simulated)",
+            tr: "tr <set1> <set2>  —  Translate characters (simulated)",
+            diff: "diff <file1> <file2>  —  Compare files",
+            bc: "bc  —  Calculator (e.g. 'bc 2+2')",
+            seq: "seq <first> <last>  —  Print number sequence",
+            printf: "printf <format> [args]  —  Format and print",
+            which: "which <command>  —  Locate command",
+            type: "type <command>  —  Display command type",
+            env: "env|printenv  —  Show environment variables",
+            export: "export <KEY=value>  —  Set environment variable",
+            true: "true  —  Do nothing, successfully",
+            false: "false  —  Do nothing, unsuccessfully",
+            yes: "yes [string]  —  Repeatedly output string",
+            sleep: "sleep <seconds>  —  Delay execution",
+            watch: "watch [-n <interval>] <command>  —  Re-run command periodically",
+            tee: "tee <file>  —  Write stdin to file (simulated)",
+            xargs: "xargs <command>  —  Build and execute command (simulated)",
+            test: "test|builtin [  —  Evaluate expression",
+            expr: "expr <expression>  —  Evaluate expression",
+            dirname: "dirname <path>  —  Strip last component from path",
+            basename: "basename <path>  —  Strip directory from path",
+            readlink: "readlink <path>  —  Print symlink target",
+            stat: "stat <path>  —  Display file or file system status",
+            realpath: "realpath <path>  —  Print resolved absolute path",
+            mktemp: "mktemp [-d]  —  Create temporary file/dir",
+            sync: "sync  —  Flush filesystem buffers (simulated)",
+            crontab: "crontab [-e|-l|-r]  —  Manage cron jobs",
+            screen: "screen|tmux  —  Terminal multiplexer (simulated)",
+            man: "man|info <topic>  —  Show manual page (simulated)",
+            lsusb: "lsusb  —  List USB devices",
+            lspci: "lspci  —  List PCI devices",
+            lscpu: "lscpu  —  Show CPU info",
+            sensors: "sensors  —  Show hardware sensors",
+            lsmod: "lsmod  —  Show kernel modules",
+            modprobe: "modprobe <module>  —  Load kernel module",
+            modinfo: "modinfo <module>  —  Show module info",
+            dmesg: "dmesg  —  Print kernel ring buffer",
+            nohup: "nohup <command>  —  Run immune to hangups",
+            nice: "nice|renice <command>  —  Run with adjusted priority",
+        };
+
+        const printHelp = (cmd) => {
+            if (!cmd) {
+                print("Available commands (" + Object.keys(helpTexts).length + "):");
+                const names = Object.keys(helpTexts).sort();
+                let line = "";
+                names.forEach((n, i) => {
+                    line += n;
+                    if ((i + 1) % 5 === 0 || i === names.length - 1) { print(line); line = ""; }
+                    else line += ", ";
+                });
+                print("");
+                print("Use 'help <command>' or '<command> --help' for details on a specific command.");
+            } else if (helpTexts[cmd]) {
+                print(helpTexts[cmd]);
+            } else {
+                print("No help available for '" + cmd + "'");
+            }
+        };
 
         const printHint = () => {
             if (VirtualKernel.powerState === "STAGE1_INPUT") {
@@ -900,13 +1089,29 @@
             }
         };
 
+        const isSymlink = (node) => node.type === "l" || node.type === "symlink";
+        const nodeTypeChar = (node) => node.type === "d" ? "d" : isSymlink(node) ? "l" : node.type === "b" ? "b" : "-";
+        const getPerms = (node) => node.permissions || (node.type === "d" ? "rwxr-xr-x" : isSymlink(node) ? "rwxrwxrwx" : "rw-r--r--");
+        const getOctalPerms = (node) => {
+            const p = getPerms(node);
+            const map = { "r": 4, "w": 2, "x": 1, "-": 0 };
+            let oct = "0";
+            for (let i = 0; i < 3; i++) {
+                let sum = 0;
+                for (let j = 0; j < 3; j++) sum += map[p[i * 3 + j]] || 0;
+                oct += sum;
+            }
+            return oct;
+        };
         const formatLsLong = (name, node) => {
-            const perms = node.permissions || (node.type === "d" ? "rwxr-xr-x" : node.type === "l" ? "rwxrwxrwx" : "rw-r--r--");
+            const perms = getPerms(node);
             const owner = node.owner || "root";
             const group = node.group || "root";
             const size = node.size || (node.type === "d" ? "4096" : (node.content ? node.content.length.toString() : "0"));
-            const type = node.type === "d" ? "d" : node.type === "l" ? "l" : node.type === "b" ? "b" : "-";
-            return `${type}${perms} 1 ${owner} ${group} ${size.padStart(8)} ${name}`;
+            const type = nodeTypeChar(node);
+            let extra = "";
+            if (isSymlink(node) && node.target) extra = " -> " + node.target;
+            return `${type}${perms} 1 ${owner} ${group} ${size.padStart(8)} ${name}${extra}`;
         };
 
         const handleLs = (args) => {
@@ -1188,6 +1393,7 @@
                 else node.permissions = "rwxr-xr-x";
             } else if (permMap[mode] !== undefined) {
                 node.permissions = permMap[mode];
+                node.octalPerms = "0" + mode;
             } else {
                 print("chmod: invalid mode: '" + mode + "'");
             }
@@ -1207,73 +1413,82 @@
             const opts = args.filter(a => a.startsWith("-"));
             const rest = args.filter(a => !a.startsWith("-"));
             const ignore = opts.some(o => o.includes("i"));
-            const regex = opts.some(o => o.includes("E") || o.includes("P"));
-            if (rest.length < 2) { print("grep: usage error"); return; }
-            const pattern = rest[0];
-            const file = rest[1];
-            const node = getNode(file);
-            if (!node || node.type === "d") { print("grep: " + file + ": No such file or directory"); return; }
-            const content = node.content || "";
+            const pattern = rest[0] || "";
+            let content = _stdinData;
+            let source = "(stdin)";
+            if (rest.length >= 2) {
+                const node = getNode(rest[1]);
+                if (!node || node.type === "d") { print("grep: " + rest[1] + ": No such file or directory"); return; }
+                content = node.content || "";
+                source = rest[1];
+            } else if (!content && rest.length === 1) {
+                print("grep: " + rest[0] + ": No such file or directory");
+                return;
+            } else if (!content) {
+                print("grep: usage error");
+                return;
+            }
             const lines = content.split("\n");
             const re = new RegExp(pattern, ignore ? "i" : "");
-            lines.forEach((l, i) => { if (l.match(re)) print(file + ":" + (i + 1) + ":" + l); });
+            lines.forEach((l, i) => { if (l.match(re)) print(source + ":" + (i + 1) + ":" + l); });
+        };
+        const getStdinOrFile = (args) => {
+            const rest = args.filter(a => !a.startsWith("-"));
+            if (rest[0]) {
+                const node = getNode(rest[0]);
+                if (!node) return null;
+                return { content: node.content || "", name: rest[0] };
+            }
+            if (_stdinData) return { content: _stdinData, name: "(stdin)" };
+            return null;
         };
         const handleHead = (args) => {
             const nIdx = args.indexOf("-n");
             let n = 10;
             const rest = args.filter(a => !a.startsWith("-"));
             if (nIdx !== -1) { n = parseInt(args[nIdx + 1]) || 10; }
-            if (!rest[0]) { print("head: missing file operand"); return; }
-            const node = getNode(rest[0]);
-            if (!node) { print("head: " + rest[0] + ": No such file or directory"); return; }
-            (node.content || "").split("\n").slice(0, n).forEach(l => print(l));
+            const src = getStdinOrFile(args);
+            if (!src) { print("head: missing file operand"); return; }
+            src.content.split("\n").slice(0, n).forEach(l => print(l));
         };
         const handleTail = (args) => {
             const nIdx = args.indexOf("-n");
             let n = 10;
             const rest = args.filter(a => !a.startsWith("-"));
             if (nIdx !== -1) { n = parseInt(args[nIdx + 1]) || 10; }
-            if (!rest[0]) { print("tail: missing file operand"); return; }
-            const node = getNode(rest[0]);
-            if (!node) { print("tail: " + rest[0] + ": No such file or directory"); return; }
-            const lines = (node.content || "").split("\n");
+            const src = getStdinOrFile(args);
+            if (!src) { print("tail: missing file operand"); return; }
+            const lines = src.content.split("\n");
             lines.slice(Math.max(0, lines.length - n)).forEach(l => print(l));
         };
         const handleWc = (args) => {
-            const rest = args.filter(a => !a.startsWith("-"));
-            if (!rest[0]) { print("wc: missing file operand"); return; }
-            const node = getNode(rest[0]);
-            if (!node) { print("wc: " + rest[0] + ": No such file or directory"); return; }
-            const content = node.content || "";
+            const src = getStdinOrFile(args);
+            if (!src) { print("wc: missing file operand"); return; }
+            const content = src.content;
             const lines = content.split("\n").length - (content.endsWith("\n") ? 0 : content === "" ? 0 : 1);
             const words = content.split(/\s+/).filter(w => w).length;
             const chars = content.length;
-            print(lines + " " + words + " " + chars + " " + rest[0]);
+            print(lines + " " + words + " " + chars + " " + src.name);
         };
         const handleSort = (args) => {
-            const rest = args.filter(a => !a.startsWith("-"));
-            if (!rest[0]) { print("sort: missing file operand"); return; }
-            const node = getNode(rest[0]);
-            if (!node) { print("sort: " + rest[0] + ": No such file or directory"); return; }
-            (node.content || "").split("\n").filter(l => l).sort().forEach(l => print(l));
+            const src = getStdinOrFile(args);
+            if (!src) { print("sort: missing file operand"); return; }
+            src.content.split("\n").filter(l => l).sort().forEach(l => print(l));
         };
         const handleUniq = (args) => {
-            const rest = args.filter(a => !a.startsWith("-"));
-            if (!rest[0]) { print("uniq: missing file operand"); return; }
-            const node = getNode(rest[0]);
-            if (!node) { print("uniq: " + rest[0] + ": No such file or directory"); return; }
+            const src = getStdinOrFile(args);
+            if (!src) { print("uniq: missing file operand"); return; }
             let prev = null;
-            (node.content || "").split("\n").forEach(l => { if (l !== prev) { print(l); prev = l; } });
+            src.content.split("\n").forEach(l => { if (l !== prev) { print(l); prev = l; } });
         };
         const handleLess = (args) => {
-            if (!args[0]) { print("less: missing file operand"); return; }
-            const node = getNode(args[0]);
-            if (!node) { print("less: " + args[0] + ": No such file or directory"); return; }
+            const src = getStdinOrFile(args);
+            if (!src) { print("less: missing file operand"); return; }
             print("(simulated pager — showing full content)");
-            (node.content || "").split("\n").forEach(l => print(l));
+            src.content.split("\n").forEach(l => print(l));
         };
         const handleMore = (args) => {
-            if (!args[0]) { print("more: missing file operand"); return; }
+            if (!args[0] && !_stdinData) { print("more: missing file operand"); return; }
             handleLess(args);
         };
         const handleSed = (args, rawCmd) => {
@@ -1380,28 +1595,31 @@
         // --- Process ---
         const handlePs = (args) => {
             const wide = args.includes("aux") || args.includes("ef") || args.includes("-ef");
+            const procs = systemState.processes.list;
             if (wide) {
                 print("USER   PID  CPU  MEM  VSZ    RSS   TTY   STAT START   TIME  COMMAND");
-                print("root     1  0.0  0.0  9876  2340  ?     Ss   15:48  0:00  init");
-                print("root   201  0.0  0.0 12345  3456  tty1  Ss   15:48  0:00  /usr/bin/login -- root");
-                print("jew    445  0.0  0.0 23456  5678  tty1  S     15:48  0:00  bash");
-                print("jew    789  0.0  0.0 34567  4567  tty1  R+   16:30  0:00  ps aux");
+                procs.forEach(p => {
+                    print((p.user || "root").padEnd(7) + String(p.pid).padEnd(5) + "0.0  0.0  " + "9876  2340  ?     " + (p.state || "S ").padEnd(4) + "15:48  0:00  " + p.cmd);
+                });
             } else {
                 print("  PID TTY          TIME CMD");
-                print("  445 tty1      00:00:00 bash");
-                print("  789 tty1      00:00:00 ps");
+                procs.forEach(p => print("  " + String(p.pid).padEnd(5) + "tty1      00:00:00 " + p.cmd.split("/").pop()));
             }
         };
         const handleTop = () => {
-            print("top - 16:30:11 up 42 min, 1 user, load average: 0.08, 0.03, 0.01");
-            print("Tasks:  87 total,   1 running,  86 sleeping,   0 stopped,   0 zombie");
+            const uptime = Math.round((Date.now() - systemState.kernel.uptimeBase) / 1000);
+            const mins = Math.floor(uptime / 60);
+            const procs = systemState.processes.list;
+            print("top - 16:30:11 up " + mins + " min, " + procs.length + " user, load average: 0.08, 0.03, 0.01");
+            print("Tasks: " + procs.length + " total,   1 running,  " + (procs.length - 1) + " sleeping,   0 stopped,   0 zombie");
             print("%Cpu(s):  2.3 us,  1.1 sy,  0.0 ni, 96.3 id,  0.3 wa,  0.0 hi,  0.0 si,  0.0 st");
             print("MiB Mem :   1984.3 total,   1042.0 free,    312.4 used,    629.9 buff/cache");
             print("MiB Swap:   1024.0 total,   1024.0 free,      0.0 used.   1502.1 avail Mem");
             print("");
             print("  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND");
-            print("  445 jew       20   0   23456   5678   3456 S   0.3   0.3   0:00.01 bash");
-            print("  789 jew       20   0   34567   4567   3456 R   0.0   0.2   0:00.00 top");
+            procs.forEach(p => {
+                print("  " + String(p.pid).padEnd(5) + (p.user || "root").padEnd(6) + " 20   0   23456   5678   3456 S   " + p.cpu.toFixed(1).padStart(4) + "  " + p.mem.toFixed(1).padStart(4) + "   0:00.01 " + p.cmd.split("/").pop());
+            });
         };
         const handleKill = (args) => {
             if (args.length === 0) { print("kill: usage: kill [-s sigspec | -n signum | -sigspec] pid"); return; }
@@ -1416,18 +1634,21 @@
 
         // --- Network ---
         const handleIp = (args) => {
+            const ifs = systemState.network.interfaces;
             if (args.includes("addr") || args.includes("a")) {
-                print("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noop state UP");
-                print("    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00");
-                print("    inet 127.0.0.1/8 scope host lo");
-                print("2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP");
-                print("    link/ether 08:00:27:ab:cd:ef brd ff:ff:ff:ff:ff:ff");
-                print("    inet 10.0.2.15/24 brd 10.0.2.255 scope global enp0s3");
+                let i = 1;
+                Object.entries(ifs).forEach(([name, iface]) => {
+                    print(i + ": " + name + ": <" + iface.state + ",UP,LOWER_UP> mtu " + iface.mtu + " qdisc fq_codel state " + iface.state);
+                    print("    link/ether " + iface.mac + " brd ff:ff:ff:ff:ff:ff");
+                    if (iface.inet4) print("    inet " + iface.inet4 + " scope global " + name);
+                    if (iface.inet6) print("    inet6 " + iface.inet6 + " scope global");
+                    i++;
+                });
             } else if (args.includes("link")) {
-                print("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noop state UP");
-                print("    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00");
-                print("2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP");
-                print("    link/ether 08:00:27:ab:cd:ef brd ff:ff:ff:ff:ff:ff");
+                Object.entries(ifs).forEach(([name, iface]) => {
+                    print(name + ": <" + iface.state + ",UP,LOWER_UP> mtu " + iface.mtu + " qdisc fq_codel state " + iface.state);
+                    print("    link/ether " + iface.mac + " brd ff:ff:ff:ff:ff:ff");
+                });
             } else if (args.includes("route")) {
                 print("default via 10.0.2.1 dev enp0s3");
                 print("10.0.2.0/24 dev enp0s3 proto kernel scope link src 10.0.2.15");
@@ -1648,18 +1869,38 @@
         };
         const handleSystemctl = (args) => {
             const svc = args.filter(a => !a.startsWith("-"))[0] || "";
-            if (args.includes("enable")) { print("Created symlink /etc/systemd/system/multi-user.target.wants/" + svc + " → /usr/lib/systemd/system/" + svc); }
-            else if (args.includes("start")) { print("Job for " + svc + ".service started."); }
-            else if (args.includes("status")) {
-                print(svc + ".service - " + svc.charAt(0).toUpperCase() + svc.slice(1) + " Service");
-                print("     Loaded: loaded /usr/lib/systemd/system/" + svc + ".service (enabled)");
-                print("     Active: active (running) since Tue 2026-06-09 15:48:11 WIB");
-                print("   Main PID: 12345 (sd-pam)");
-                print("      Tasks: 2 (limit: 18841)");
-                print("     Memory: 1.2M");
+            const svcNormalized = svc.endsWith(".service") ? svc.slice(0, -8) : svc;
+            if (svcNormalized && systemState.services[svcNormalized] !== undefined) {
+                if (args.includes("enable")) {
+                    systemState.services[svcNormalized].enabled = true;
+                    print("Created symlink /etc/systemd/system/multi-user.target.wants/" + svcNormalized + ".service → /usr/lib/systemd/system/" + svcNormalized + ".service");
+                } else if (args.includes("disable")) {
+                    systemState.services[svcNormalized].enabled = false;
+                    print("Removed symlink /etc/systemd/system/multi-user.target.wants/" + svcNormalized + ".service");
+                } else if (args.includes("start")) {
+                    systemState.services[svcNormalized].active = true;
+                    systemState.services[svcNormalized].pid = ++systemState.processes.nextPid;
+                    print("Job for " + svcNormalized + ".service started.");
+                } else if (args.includes("stop")) {
+                    systemState.services[svcNormalized].active = false;
+                    systemState.services[svcNormalized].pid = null;
+                    print("Job for " + svcNormalized + ".service stopped.");
+                } else if (args.includes("status")) {
+                    const s = systemState.services[svcNormalized];
+                    print(svcNormalized + ".service - " + svcNormalized + " Service");
+                    print("     Loaded: loaded /usr/lib/systemd/system/" + svcNormalized + ".service (" + (s.enabled ? "enabled" : "disabled") + ")");
+                    print("     Active: " + (s.active ? "active (running)" : "inactive (dead)") + " since Tue 2026-06-09 15:48:11 WIB");
+                    if (s.pid) print("   Main PID: " + s.pid + " (sd-pam)");
+                    print("      Tasks: 2 (limit: 18841)");
+                    print("     Memory: 1.2M");
+                } else { print("systemctl: unknown command for service '" + svcNormalized + "'"); }
+            } else if (args.includes("--version")) {
+                print("systemd 255 (255.4-1-arch)");
+            } else if (svcNormalized && !systemState.services[svcNormalized]) {
+                print("systemctl: Unit " + svcNormalized + ".service not found.");
+            } else {
+                print("systemctl: missing arguments");
             }
-            else if (args.includes("--version")) { print("systemd 255 (255.4-1-arch)"); }
-            else { print("systemctl: missing arguments"); }
         };
         const handleUseradd = (args) => {
             const rest = args.filter(a => !a.startsWith("-"));
@@ -1709,7 +1950,7 @@
         const handleBc = (args) => {
             const expr = args.join(" ");
             if (!expr) { print("bc: no expression given"); return; }
-            try { const r = Function('"use strict"; return (' + expr + ')')(); print(r.toString()); } catch (e) { print("bc: syntax error"); }
+            try { const r = safeEval(expr); print(r.toString()); } catch (e) { print("bc: " + e.message); }
         };
         const handleSeq = (args) => {
             const nums = args.filter(a => !a.startsWith("-"));
@@ -1750,7 +1991,7 @@
         };
         const handleExpr = (args) => {
             const expr = args.join(" ");
-            try { const r = Function('"use strict"; return (' + expr + ')')(); print(r.toString()); } catch (e) { print("expr: syntax error"); }
+            try { const r = safeEval(expr); print(r.toString()); } catch (e) { print("expr: " + e.message); }
         };
         const handleDirname = (args) => {
             if (!args[0]) { print("dirname: missing operand"); return; }
@@ -1767,6 +2008,16 @@
             const node = getNode(args[0]);
             if (!node) { print("readlink: " + args[0] + ": No such file or directory"); return; }
             print(node.target || args[0]);
+        };
+        const handleStat = (args) => {
+            if (!args[0]) { print("stat: missing operand"); return; }
+            const node = getNode(args[0]);
+            if (!node) { print("stat: cannot stat '" + args[0] + "': No such file or directory"); return; }
+            print("  File: " + args[0]);
+            print("  Size: " + (node.content ? node.content.length : 0) + "    \tBlocks: " + Math.ceil((node.content ? node.content.length : 0) / 512) + "          IO Block: 4096   " + (node.type === "d" ? "directory" : isSymlink(node) ? "symbolic link" : "regular file"));
+            print("Device: 8,2\tInode: " + (node.inode || Math.floor(Math.random() * 1000000)) + "  Links: 1");
+            print("Access: (" + (node.octalPerms || getOctalPerms(node)) + "/" + getPerms(node) + ")  Uid: ( 1000/    " + (node.owner || "root") + ")   Gid: ( 1000/    " + (node.group || "root") + ")");
+            if (isSymlink(node)) print("Target: " + (node.target || "(empty)"));
         };
         const handleMktemp = (args) => {
             const dir = args.includes("-d");
@@ -1852,71 +2103,13 @@
         };
         const handleVim = (args) => { handleEditor(args); };
 
-        const processCommand = async (input) => {
-            const cmd = input.trim();
-            if (!cmd) return;
-
-            const isSecret = VirtualKernel.powerState === "STAGE3_PASSWORD" || VirtualKernel.powerState === "STAGE3_PACMAN";
-            if (!isSecret) {
-                print(`${getPrompt()}${cmd}`);
-            }
-
-            if (VirtualKernel.powerState === "STAGE1_INPUT") {
-                if (cmd === "4") {
-                    print("Access Granted" + (addUwu() ? uwuFillin() : "") + ".");
-                    startStage2();
-                } else {
-                    const wrongs = [
-                        "Incorrect password. >:(",
-                        "Nyo, that's not wight! Twy again UwU",
-                        "O-oh... that's not the answe... :3",
-                    ];
-                    print(wrongs[Math.floor(Math.random() * wrongs.length)]);
-                }
-                saveState();
-                return;
-            }
-
-            if (VirtualKernel.powerState === "STAGE2_SELECT") {
-                if (cmd === "1") {
-                    startArchInstall();
-                } else if (cmd === "2") {
-                    print("Loading GUI Setup..." + (addUwu() ? uwuFillin() : ""));
-                    print("FATAL: Display driver dump. Rebooting..." + (addUwu() ? uwuFillin() : ""));
-                    print("Nyo Nyo being a chuwd bwe a gwood bwoy ^w^");
-                    setTimeout(() => location.reload(), 5000);
-                } else {
-                    print("Invalid option." + (addUwu() ? uwuFillin() : ""));
-                }
-                saveState();
-                return;
-            }
-
-            if (VirtualKernel.powerState === "STAGE3_LOGIN") {
-                handleLogin(cmd);
-                saveState();
-                return;
-            }
-            
-            if (VirtualKernel.powerState === "STAGE3_PASSWORD") {
-                handlePassword(cmd);
-                saveState();
-                return;
-            }
-
-            if (VirtualKernel.powerState === "STAGE3_PACMAN") {
-                handlePacman(cmd);
-                saveState();
-                return;
-            }
-
-            const parts = cmd.split(/\s+/);
-            const baseCmd = parts[0];
-            const args = parts.slice(1);
-
+        const runCmd = async (baseCmd, args, rawCmd) => {
             switch(baseCmd) {
                 // --- Navigation & help ---
                 case 'help':
+                    if (args[0]) { printHelp(args[0]); break; }
+                    printHelp();
+                    break;
                 case 'hint':
                     printHint();
                     break;
@@ -2000,7 +2193,7 @@
                     await handlePacstrap(args);
                     break;
                 case 'pacman':
-                    handlePacman(args, cmd);
+                    handlePacman(args, rawCmd);
                     break;
                 case 'reflector':
                     handleReflector(args);
@@ -2016,7 +2209,7 @@
                     handleLn(args);
                     break;
                 case 'echo':
-                    handleEcho(args, cmd);
+                    handleEcho(args, rawCmd);
                     break;
                 case 'exit':
                     handleExit();
@@ -2070,7 +2263,7 @@
                     break;
                 // --- Privilege escalation ---
                 case 'sudo':
-                    handleSudo(args, cmd);
+                    handleSudo(args, rawCmd);
                     break;
                 // --- Networking ---
                 case 'ping':
@@ -2138,7 +2331,7 @@
                     handleMore(args);
                     break;
                 case 'sed':
-                    handleSed(args, cmd);
+                    handleSed(args, rawCmd);
                     break;
                 case 'awk':
                     print("awk: simulated — no pattern matched");
@@ -2166,11 +2359,11 @@
                     handleKillall(args);
                     break;
                 case 'nohup':
-                    handleNohup(args, cmd);
+                    handleNohup(args, rawCmd);
                     break;
                 case 'nice':
                 case 'renice':
-                    handleNice(args, cmd);
+                    handleNice(args, rawCmd);
                     break;
                 // --- System info ---
                 case 'uname':
@@ -2210,7 +2403,7 @@
                     handleEnv();
                     break;
                 case 'export':
-                    handleExport(args, cmd);
+                    handleExport(args, rawCmd);
                     break;
                 case 'printenv':
                     handleEnv();
@@ -2261,7 +2454,7 @@
                     handleSeq(args);
                     break;
                 case 'printf':
-                    handlePrintf(args, cmd);
+                    handlePrintf(args, rawCmd);
                     break;
                 case 'which':
                     handleWhich(args);
@@ -2282,17 +2475,17 @@
                     await handleSleep(args);
                     break;
                 case 'watch':
-                    handleWatch(args, cmd);
+                    handleWatch(args, rawCmd);
                     break;
                 case 'tee':
-                    handleTee(args, cmd);
+                    handleTee(args, rawCmd);
                     break;
                 case 'xargs':
-                    handleXargs(args, cmd);
+                    handleXargs(args, rawCmd);
                     break;
                 case 'test':
                 case '[':
-                    handleTest(args, cmd);
+                    handleTest(args, rawCmd);
                     break;
                 case 'expr':
                     handleExpr(args);
@@ -2305,6 +2498,9 @@
                     break;
                 case 'readlink':
                     handleReadlink(args);
+                    break;
+                case 'stat':
+                    handleStat(args);
                     break;
                 case 'realpath':
                     print("realpath: " + (args[0] ? resolvePath(args[0]) : VirtualKernel.currentDirectory));
@@ -2332,6 +2528,101 @@
                     print(`${baseCmd}: oh no! you make a fuckuo buingo! Uwu`);
             }
             saveState();
+        };
+
+        const processCommand = async (input) => {
+            const cmd = input.trim();
+            if (!cmd) return;
+
+            const isSecret = VirtualKernel.powerState === "STAGE3_PASSWORD" || VirtualKernel.powerState === "STAGE3_PACMAN";
+            if (!isSecret) {
+                print(`${getPrompt()}${cmd}`);
+            }
+
+            if (VirtualKernel.powerState === "STAGE1_INPUT") {
+                if (cmd === "4") {
+                    print("Access Granted" + (addUwu() ? uwuFillin() : "") + ".");
+                    startStage2();
+                } else {
+                    const wrongs = [
+                        "Incorrect password. >:(",
+                        "Nyo, that's not wight! Twy again UwU",
+                        "O-oh... that's not the answe... :3",
+                    ];
+                    print(wrongs[Math.floor(Math.random() * wrongs.length)]);
+                }
+                saveState();
+                return;
+            }
+
+            if (VirtualKernel.powerState === "STAGE2_SELECT") {
+                if (cmd === "1") {
+                    startArchInstall();
+                } else if (cmd === "2") {
+                    print("Loading GUI Setup..." + (addUwu() ? uwuFillin() : ""));
+                    print("FATAL: Display driver dump. Rebooting..." + (addUwu() ? uwuFillin() : ""));
+                    print("Nyo Nyo being a chuwd bwe a gwood bwoy ^w^");
+                    setTimeout(() => location.reload(), 5000);
+                } else {
+                    print("Invalid option." + (addUwu() ? uwuFillin() : ""));
+                }
+                saveState();
+                return;
+            }
+
+            if (VirtualKernel.powerState === "STAGE3_LOGIN") {
+                handleLogin(cmd);
+                saveState();
+                return;
+            }
+            
+            if (VirtualKernel.powerState === "STAGE3_PASSWORD") {
+                handlePassword(cmd);
+                saveState();
+                return;
+            }
+
+            if (VirtualKernel.powerState === "STAGE3_PACMAN") {
+                handlePacman(cmd);
+                saveState();
+                return;
+            }
+
+            // Check for --help / -h on any command
+            if (cmd.includes(" --help") || cmd.includes(" -h")) {
+                const parts2 = cmd.split(/\s+/);
+                const hcmd = parts2[0];
+                if (helpTexts[hcmd]) { print(helpTexts[hcmd]); saveState(); return; }
+            }
+
+            // Check for pipe operator
+            if (cmd.includes(" | ")) {
+                const segments = cmd.split(/\s*\|\s*/);
+                let prevOut = "";
+                for (let i = 0; i < segments.length; i++) {
+                    _stdinData = prevOut;
+                    startCapture();
+                    const segInput = segments[i].trim();
+                    const segParts = segInput.split(/\s+/);
+                    const segBase = segParts[0];
+                    if (segBase) {
+                        const isSecret = VirtualKernel.powerState === "STAGE3_PASSWORD" || VirtualKernel.powerState === "STAGE3_PACMAN";
+                        if (!isSecret && i === segments.length - 1) {
+                            // only print prompt for last visible segment
+                        }
+                        // Run through switch logic via inline dispatch
+                        await runCmd(segBase, segParts.slice(1), segInput);
+                        if (_captureBuf) { /* captured in runCmd's saveState call — undo duplicate print */ }
+                    }
+                    const out = stopCapture();
+                    prevOut = out.join("\n");
+                }
+                if (prevOut) prevOut.split("\n").forEach(l => print(l));
+                saveState();
+                return;
+            }
+
+            await runCmd(baseCmd, args, cmd);
         };
 
         window.onload = () => {
